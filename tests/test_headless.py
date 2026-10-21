@@ -76,6 +76,38 @@ def test_parser():
     print("OK parser")
 
 
+def test_epub2_real_file():
+    """EPUB 2 real (namespace 2007/opf) — regredia com 'OPF sem <manifest>'."""
+    import glob
+
+    from pypub.epub import Epub, chapter_title
+    from pypub.renderer import prepare_chapter
+
+    hits = glob.glob(os.path.join(os.path.dirname(__file__), "*Žižek*.epub"))
+    assert hits, "EPUB de teste (Žižek) não encontrado em tests/"
+    path = hits[0]
+
+    book = Epub.open(path)
+    try:
+        assert book.title == "O sublime objeto da ideologia", book.title
+        assert book.creator == "Slavoj Žižek", book.creator
+        assert len(book.chapters) == 18, len(book.chapters)
+
+        # capa (1º item do spine) com imagem embutida
+        first = book.chapters[0]
+        html = prepare_chapter(book.read(first.path).decode("utf-8", "replace"), first.path, book, False)
+        assert "data:image/" in html, "capa não foi inlineada"
+        assert "columns: 2" in html, "CSS responsivo ausente"
+
+        # capítulo 2 (página de título) tem texto legível
+        ch2 = book.chapters[1]
+        t2 = chapter_title(book.read(ch2.path), fallback="?")
+        assert "sublime objeto" in t2.lower(), t2
+    finally:
+        book.close()
+    print("OK EPUB 2 (arquivo real, namespace 2007/opf)")
+
+
 def wait_view_idle(reader, timeout=25.0):
     """Roda o event loop até a view parar de carregar (ou timeout)."""
     from PySide6.QtCore import QEventLoop, QTimer
@@ -185,11 +217,12 @@ Window {{
         zoomFactor: bridge ? bridge.zoom : 1.0
         backgroundColor: bridge ? bridge.pageBackground : "white"
         Component.onCompleted: {{
-            function onContent(html) {{
-                loadHtml(html, Qt.url("about:blank"))
+            function onContent(url) {{
+                reader.url = Qt.url(url)
             }}
             bridge.contentChanged.connect(onContent)
-            onContent(bridge.currentHtml())
+            if (bridge.contentUrl().length > 0)
+                reader.url = Qt.url(bridge.contentUrl())
         }}
     }}
 }}
@@ -241,6 +274,36 @@ def test_bridge_and_render(app):
     cols = wait_js(root, "getComputedStyle(document.body).columnCount", lambda c: str(c) == "2")
     assert str(cols) == "2", f"esperado 2 colunas (largura 1400), obtido: {cols!r}"
 
+    # paginação (uma “página” = uma viewport de altura)
+    info = wait_js(root, "typeof pypub_info === 'function' ? pypub_info() : null",
+                   lambda v: v is not None and v.get("total", 0) >= 1)
+    assert info and info.get("current") == 1, f"pypub_info() falhou: {info!r}"
+    assert info.get("total", 0) >= 2, f"capítulo do exemplo deveria ter >= 2 páginas: {info!r}"
+
+    res = wait_js(root, "typeof pypub_nextPage==='function'?pypub_nextPage():null",
+                  lambda v: v is not None and v.get("current") == 2)
+    assert res and res.get("current") == 2, f"pypub_nextPage() falhou: {res!r}"
+
+    res = wait_js(root, "typeof pypub_prevPage==='function'?pypub_prevPage():null",
+                  lambda v: v is not None and v.get("current") == 1)
+    assert res and res.get("current") == 1, f"pypub_prevPage() falhou: {res!r}"
+
+    res = wait_js(root, "typeof pypub_goToPage==='function'?pypub_goToPage(3):null",
+                  lambda v: v is not None and v.get("current") == 3)
+    assert res and res.get("current") == 3, f"pypub_goToPage(3) falhou: {res!r}"
+
+    # clamp: não passa da última nem fica antes da primeira
+    res = wait_js(root,
+                  "(function(){if(typeof pypub_nextPage!=='function')return null;"
+                  "pypub_nextPage();pypub_nextPage();pypub_nextPage();return pypub_info();})()",
+                  lambda v: v is not None)
+    assert res and res.get("current") == info["total"], f"clamp superior falhou: {res!r}"
+    res = wait_js(root,
+                  "(function(){if(typeof pypub_goToPage!=='function')return null;"
+                  "pypub_goToPage(1);pypub_prevPage();return pypub_info();})()",
+                  lambda v: v is not None and v.get("current") == 1)
+    assert res and res.get("current") == 1, f"clamp inferior falhou: {res!r}"
+
     # navegação
     bridge.next()
     assert bridge.currentIndex == 1
@@ -268,6 +331,25 @@ def test_bridge_and_render(app):
     # erro ao abrir livro inexistente
     assert not bridge.openFile("/tmp/nao_existe.epub")
     assert bridge.lastError != ""
+
+    # livro real (EPUB 2): capítulo longo via servidor local + paginação
+    import glob
+
+    zizek = glob.glob(os.path.join(os.path.dirname(__file__), "*Žižek*.epub"))
+    if zizek:
+        assert bridge.openFile(zizek[0])
+        # capítulo 4 é longo (~37 mil caracteres) → várias páginas
+        bridge.goTo(4)
+        info = wait_js(root, "typeof pypub_info === 'function' ? pypub_info() : null",
+                       lambda v: v is not None and v.get("total", 0) >= 2, timeout=40.0)
+        assert info and info.get("current") == 1, f"pypub_info (livro real) falhou: {info!r}"
+        assert info.get("total", 0) >= 2, f"livro real deveria ter >= 2 páginas: {info!r}"
+        res = wait_js(root, "typeof pypub_nextPage==='function'?pypub_nextPage():null",
+                      lambda v: v is not None and v.get("current") == 2, timeout=40.0)
+        assert res and res.get("current") == 2, f"nextPage (livro real) falhou: {res!r}"
+        res = wait_js(root, "typeof pypub_prevPage==='function'?pypub_prevPage():null",
+                      lambda v: v is not None and v.get("current") == 1, timeout=40.0)
+        assert res and res.get("current") == 1, f"prevPage (livro real) falhou: {res!r}"
 
     # screenshot da view renderizada (via função QML -> grabToImage)
     from PySide6.QtCore import QEventLoop, QTimer
@@ -305,6 +387,7 @@ def test_bridge_and_render(app):
                          lambda h: "epub" in (h or "").lower())
     assert "epub" in (html_empty or "").lower(), "estado vazio não renderizado"
     root.deleteLater()
+    bridge.shutdown()
 
 
 def test_qml(app):
@@ -340,12 +423,14 @@ def test_qml(app):
     title = win.property("title") or ""
     assert "EPUB de Exemplo" in str(title), f"título inesperado: {title}"
     print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title, ")")
+    bridge.shutdown()
     return 0
 
 
 def main():
     make_sample()
     test_parser()
+    test_epub2_real_file()
 
     from PySide6.QtWidgets import QApplication
 

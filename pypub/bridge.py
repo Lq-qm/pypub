@@ -2,7 +2,12 @@
 interface QML/Kirigami.
 
 A view de renderização é a ``QWebEngineView`` do QML (módulo ``QtWebEngine``);
-a ponte emite ``contentChanged(html)`` sempre que o conteúdo a exibir muda.
+a ponte emite ``contentChanged(url)`` sempre que o conteúdo a exibir muda.
+
+O HTML pronto é servido por um servidor HTTP local (``pypub.server``) em
+``127.0.0.1``: ``loadHtml`` é instável para conteúdo grande no Qt 6.12 e a
+view QML não expõe ``load(url)``, mas atribuir a propriedade ``url`` da view
+navega normalmente — sem limite de tamanho.
 """
 
 from __future__ import annotations
@@ -11,6 +16,7 @@ from PySide6.QtCore import QObject, Property, Signal, Slot
 
 from .epub import Epub, EpubError, chapter_title
 from .renderer import empty_html, page_background, prepare_chapter
+from .server import ChapterServer
 
 _ZOOM_MIN = 0.6
 _ZOOM_MAX = 2.5
@@ -36,6 +42,11 @@ class EpubBridge(QObject):
         self._dark = False
         self._last_error = ""
         self._last_dir = ""
+        self._server = ChapterServer()
+        self._rev = 0
+        self._last_url = ""
+        # estado inicial: página vazia já servida e URL válida para o QML
+        self._emit_content()
 
     # ------------------------------------------------------------ properties
     @Property(bool, notify=bookChanged)
@@ -121,7 +132,7 @@ class EpubBridge(QObject):
         self._index = 0
         self.bookChanged.emit()
         self.positionChanged.emit()
-        self.contentChanged.emit(empty_html(self._dark))
+        self._emit_content()
 
     @Slot()
     def chooseFile(self) -> None:
@@ -158,7 +169,7 @@ class EpubBridge(QObject):
 
     @Slot(result=str)
     def currentHtml(self) -> str:
-        """HTML pronto do capítulo atual (ou estado vazio) para carga inicial."""
+        """HTML pronto do capítulo atual (ou estado vazio)."""
         if self._epub is None:
             return empty_html(self._dark)
         ch = self._epub.chapters[self._index]
@@ -167,6 +178,11 @@ class EpubBridge(QObject):
         except KeyError:
             return empty_html(self._dark)
         return prepare_chapter(raw.decode("utf-8", "replace"), ch.path, self._epub, self._dark)
+
+    @Slot(result=str)
+    def contentUrl(self) -> str:
+        """URL local do conteúdo atual (para navegação inicial da view)."""
+        return self._last_url
 
     @Slot()
     def zoomIn(self) -> None:
@@ -203,13 +219,30 @@ class EpubBridge(QObject):
         self.errorChanged.emit()
 
     def _emit_content(self) -> None:
-        """Emite o HTML pronto do capítulo atual (ou estado vazio)."""
+        """Serve o HTML pronto atual e emite a URL para a view navegar.
+
+        A URL muda a cada emissão (``?r=<revisão>``): atribuir a mesma URL
+        de novo não recarrega a view, então a revisão garante o reload —
+        inclusive para trocas de tema/zoom no mesmo capítulo.
+        """
         if self._epub is not None:
             ch = self._epub.chapters[self._index]
             try:
                 self._epub.read(ch.path)
             except KeyError:
                 self._set_error(f"Capítulo não encontrado no arquivo: {ch.path}")
-                self.contentChanged.emit(empty_html(self._dark))
-                return
-        self.contentChanged.emit(self.currentHtml())
+        html = self.currentHtml()
+        self._server.set_content(html)
+        self._rev += 1
+        path = (
+            f"chapter/{self._index}?r={self._rev}"
+            if self._epub is not None
+            else f"empty?r={self._rev}"
+        )
+        self._last_url = self._server.url(path)
+        self.contentChanged.emit(self._last_url)
+
+    # ------------------------------------------------------------------ ciclo
+    def shutdown(self) -> None:
+        """Encerra o servidor local (chamar ao sair do app / nos testes)."""
+        self._server.shutdown()

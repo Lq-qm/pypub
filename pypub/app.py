@@ -63,4 +63,6 @@ def main(argv: list[str] | None = None) -> int:
             bridge.openFile(arg)
             break
 
-    return app.exec()
+    rc = app.exec()
+    bridge.shutdown()  # encerra o servidor local (127.0.0.1)
+    return rc

@@ -32,6 +32,9 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   parseamento externas;
 - **Navegação entre capítulos** (anterior / próximo), seguindo o *spine*
   linear do livro;
+- **Navegação por página** (anterior / próxima) — uma “página” é o que cabe
+  numa viewport de altura; funciona com 1 ou 2 colunas, com indicador
+  “p. N/M” no rodapé;
 - **Layout responsivo**: **1 coluna** em janelas estreitas e, no máximo,
   **2 colunas** quando a janela é larga o suficiente (CSS multi-column +
   media query, reavaliada a cada redimensionamento);
@@ -39,7 +42,8 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 - **Tema claro / escuro** (aplicado ao conteúdo e à interface);
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
-- **Atalhos**: `Ctrl+O` (abrir), `Ctrl+←` / `Ctrl+→` (navegar);
+- **Atalhos**: `Ctrl+O` (abrir), `Ctrl+←` / `Ctrl+→` (capítulos),
+  `PageUp` / `PageDown` (páginas);
 - **Testes headless** (offscreen) cobrindo parser, ponte Python↔QML,
   renderização e a janela Kirigami real.
 
@@ -92,7 +96,10 @@ pypub livro.epub
 ## Uso
 
 - **Abrir**: botão “Abrir…” na toolbar ou `Ctrl+O`;
-- **Navegar**: “Anterior” / “Próximo” ou `Ctrl+←` / `Ctrl+→`;
+- **Navegar por capítulo**: “Capítulo anterior” / “Capítulo próximo” ou
+  `Ctrl+←` / `Ctrl+→`;
+- **Navegar por página**: “Página anterior” / “Próxima página” ou
+  `PageUp` / `PageDown` (a posição exata fica no rodapé: “p. N/M”);
 - **Zoom**: “Aa−” / “Aa+” / “1:1” (reset);
 - **Tema**: ação “Tema escuro” (checkable) alterna claro/escuro;
 - **Rodar largo**: alargue a janela além de ~980 px para o texto virar
@@ -104,9 +111,10 @@ pypub livro.epub
 ┌──────────────────────────────────────────────────────────────────────┐
 │  QML / Kirigami  (pypub/qml/Main.qml)                                │
 │  K.ApplicationWindow + K.Page                                         │
-│  ├── toolbar: Abrir, Anterior, Próximo, Aa−/Aa+, 1:1, Tema escuro    │
+│  ├── toolbar: Abrir, capítulos, páginas, Aa−/Aa+, 1:1, Tema escuro   │
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
-│  └── rodapé: status (capítulo/erros) + % zoom                        │
+│  ├── paginação: pypub_info/nextPage/prevPage via runJavaScript       │
+│  └── rodapé: status (capítulo/erros) + “p. N/M” + % zoom             │
 └───────────────▲──────────────────────────────────────────────────────┘
                 │ context property "bridge"
 ┌───────────────┴──────────────────────────────────────────────────────┐
@@ -114,10 +122,17 @@ pypub livro.epub
 │  • estado: hasBook, bookTitle, chapterCount, currentIndex, zoom,     │
 │            dark, lastError                                            │
 │  • ações: openFile, closeBook, chooseFile, previous, next, goTo,     │
-│           zoomIn/Out, resetZoom, setDark                             │
+│           zoomIn/Out, resetZoom, setDark, contentUrl, shutdown       │
 │  • sinais: bookChanged, positionChanged, zoomChanged, darkChanged,   │
-│            errorChanged, contentChanged(html)                        │
+│            errorChanged, contentChanged(url)                         │
 └───────────────▲──────────────────────────────────────────────────────┘
+                │
+┌───────────────┴──────────────────────────────────────────────────────┐
+│  ChapterServer  (pypub/server.py)  — HTTP local em 127.0.0.1         │
+│  • porta aleatória, thread daemon, só loopback                       │
+│  • serve o HTML autocontido atual (recursos inline em data: URI)     │
+│  • URL com ?r=<revisão> muda a cada emissão → garante reload         │
+└──────────────────────────────────────────────────────────────────────┘
                 │
    ┌────────────┴────────────┐
    │                         │
@@ -130,9 +145,18 @@ pypub livro.epub
 ```
 
 **Fluxo de conteúdo:** a *bridge* é a única dona do estado. Quando o livro,
-a posição, o tema ou o zoom mudam, ela emite `contentChanged(html)` com o HTML
-**pronto** (recursos inline + CSS do leitor). O QML apenas reage:
-`loadHtml(html, about:blank)`. O QML **não** conhece o parser nem o renderer.
+a posição, o tema ou o zoom mudam, ela prepara o HTML **pronto** (recursos
+inline + CSS do leitor + script de paginação), o **serve** no servidor local
+e emite `contentChanged(url)` com a URL `http://127.0.0.1:<porta>/chapter/N?r=R`.
+O QML apenas reage: `reader.url = Qt.url(url)`. O QML **não** conhece o
+parser nem o renderer.
+
+> **Por que um servidor local em vez de `loadHtml(html)`?** No Qt 6.12 a view
+> QML **não expõe** `load(url)`, e `loadHtml(html)` é **instável para HTML
+> grande** (por volta de ~500 KB a página carrega em branco — limite do IPC
+> interno do WebEngine). Navegar para `http://127.0.0.1` usa o pipeline normal
+> de carregamento do Chromium, **sem limite de tamanho** — essencial para
+> capítulos reais, que podem ter vários MB (ex.: capas/imagens embutidas).
 
 ## Como a renderização funciona
 
@@ -146,6 +170,15 @@ a posição, o tema ou o zoom mudam, ela emite `contentChanged(html)` com o HTML
   dentro de folhas de CSS também são resolvidos e inlineados.
 - **Tema**: o HTML do capítulo é re-renderizado com o CSS de tema claro ou
   escuro ao alternar o tema; o fundo da view segue a mesma cor.
+- **Paginação**: um pequeno script (`pypub/renderer.py::_PAGE_JS`) é injetado
+  no fim do `<body>` de cada capítulo e expõe na janela do documento
+  `pypub_info()`, `pypub_nextPage()`, `pypub_prevPage()` e `pypub_goToPage(n)`.
+  Uma **página = uma viewport de altura** (`window.innerHeight`), então a
+  mecânica é idêntica em 1 ou 2 colunas. O QML chama essas funções via
+  `runJavaScript` e atualiza o indicador “p. N/M”. `prevPage` no meio da
+  página volta ao topo; `PageUp`/`PageDown` e os botões da toolbar usam a
+  mesma API. O nº de páginas é reavaliado em redimensionamento e ao mudar o
+  zoom.
 
 ## Testes
 
@@ -160,9 +193,11 @@ valida, sem abrir display:
    inline de imagem/CSS, CSS responsivo presente, rejeição de EPUB inválido;
 2. **Bridge + renderização** — abre o livro, espera o conteúdo na
    `WebEngineView` (texto, imagem com `naturalWidth > 0`,
-   `columnCount == 2` em janela de 1400 px), navega (next/previous/goTo),
-   ajusta zoom, trata erro de arquivo inexistente, captura screenshot e
-   valida o estado vazio após fechar;
+   `columnCount == 2` em janela de 1400 px), valida a **paginação**
+   (`pypub_info`, `nextPage`, `prevPage`, `goToPage`, clamps), navega
+   (next/previous/goTo), ajusta zoom, trata erro de arquivo inexistente,
+   valida **livro real EPUB 2** (capítulo longo servido via HTTP local +
+   paginação), captura screenshot e valida o estado vazio após fechar;
 3. **QML Kirigami** — carrega o `Main.qml` real, cria a janela, abre um livro
    com a UI viva e confere o título.
 
@@ -181,7 +216,8 @@ valida, sem abrir display:
 │   ├── app.py               # bootstrap: QApplication + QQmlEngine + "bridge"
 │   ├── bridge.py            # EpubBridge (QObject): estado + ações + sinais
 │   ├── epub.py              # parser de EPUB (container.xml, OPF, spine)
-│   ├── renderer.py          # inline de recursos + CSS responsivo + estado vazio
+│   ├── renderer.py          # inline de recursos + CSS responsivo + script de paginação
+│   ├── server.py            # servidor HTTP local (127.0.0.1) que serve o HTML
 │   └── qml/
 │       └── Main.qml         # interface Kirigami (toolbar, view, rodapé)
 ├── tests/
@@ -202,9 +238,9 @@ valida, sem abrir display:
 
 **Ideias de evolução:**
 
-- `QQuickWebEngineView` + `QWebEngineUrlSchemeHandler` (se/ quando exposto)
-  para servir recursos do EPUB por URL em vez de inline (menos memória em
-  livros grandes);
+- `QWebEngineUrlSchemeHandler` (se/ quando exposto no PySide6) para servir
+  recursos do EPUB por schema customizado em vez de inline `data:` URIs
+  (menos memória em livros grandes);
 - Persistência (ex.: `QSettings` ou JSON) de posição/zoom/tema;
 - Testes parametrizados (pytest) e CI com `QT_QPA_PLATFORM=offscreen`.
 
@@ -228,8 +264,16 @@ com renderização por software.
 Decisões tomadas por limitações reais da stack nesta versão:
 
 - **`WebEngineView` (módulo `QtWebEngine`)** — a view QML **não** expõe a
-  propriedade `page` em 6.12; usamos API direta da view
-  (`loadHtml`, `runJavaScript`, `zoomFactor`, `backgroundColor`).
+  propriedade `page` nem o método `load(url)` em 6.12; usamos API direta da
+  view (`runJavaScript`, `zoomFactor`, `backgroundColor`) e a propriedade
+  **setável** `url` para navegar.
+- **`loadHtml(html)` instável para conteúdo grande** — por volta de ~500 KB
+  a página carrega em branco (limite do IPC interno do WebEngine); por isso
+  o conteúdo é servido por um **servidor HTTP local** (`pypub/server.py`)
+  e a view navega para `http://127.0.0.1:<porta>/...` (sem limite de
+  tamanho).
+- **`loadFinished` não existe** nesta build — o QML usa `onLoadingChanged`
+  (propriedade `loading`) para detectar o fim do carregamento.
 - **`objectName: "reader"`** — `id:` não define `objectName`; o teste localiza
   a view via `findChild(QQuickItem, "reader")`.
 - **`data:` URIs em vez de schema customizado** — `QWebEngineUrlReply` não

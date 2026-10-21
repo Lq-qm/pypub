@@ -72,6 +72,59 @@ blockquote { border-color: rgba(255, 255, 255, 0.35); }
 _PAGE_BG_LIGHT = "#fbfaf7"
 _PAGE_BG_DARK = "#1f2328"
 
+# --------------------------------------------------------------------------- JS
+# Mecanismo de paginação: uma “página” é um viewport de altura (innerHeight).
+# Exposto na janela do documento como pypub_info / pypub_goToPage /
+# pypub_nextPage / pypub_prevPage; o QML chama e lê os resultados via
+# runJavaScript. Funciona com 1 ou 2 colunas (a página é sempre o que cabe
+# na tela, independente do fluxo de colunas).
+_PAGE_JS = """
+(function () {
+  "use strict";
+  // Página atual (0-based) é um ESTADO, não só lido de scrollY:
+  // dentro de uma mesma avaliação JS, scrollY ainda não reflete o último
+  // scrollTo, então navegação baseada só no scroll ficaria defasada.
+  // Rolagem manual do usuário anda "à frente" do state — aí seguimos o scroll.
+  var state = { page: 0 };
+  function h() {
+    return window.innerHeight || document.documentElement.clientHeight || 1;
+  }
+  function total() {
+    var sh = document.documentElement.scrollHeight ||
+             (document.body ? document.body.scrollHeight : 0);
+    return Math.max(1, Math.ceil(sh / h()));
+  }
+  function scrollPage() { return Math.max(0, Math.floor(window.scrollY / h())); }
+  function info() {
+    var sp = scrollPage();
+    if (sp > state.page) state.page = sp;  // rolagem manual anda à frente
+    state.page = Math.min(total() - 1, state.page);
+    return { current: state.page + 1, total: total() };
+  }
+  function go(n) {
+    var t = total();
+    var target = Math.max(0, Math.min(t - 1, n));
+    state.page = target;
+    window.scrollTo(0, target * h());
+    return { current: target + 1, total: t };
+  }
+  if (window.addEventListener) {
+    window.addEventListener("scroll", function () {
+      var sp = scrollPage();
+      if (sp > state.page) state.page = sp;
+    });
+  }
+  window.pypub_info = info;
+  window.pypub_goToPage = function (n) { return go(n - 1); };
+  window.pypub_nextPage = function () { return go(state.page + 1); };
+  window.pypub_prevPage = function () {
+    var off = window.scrollY - state.page * h();
+    // no meio da página → volta ao topo; no topo → página anterior
+    return go(off > 5 ? state.page : state.page - 1);
+  };
+})();
+"""
+
 _EMPTY_HTML = """
 <html><head><meta charset="utf-8"></head>
 <body style="font-family:sans-serif;text-align:center;padding-top:18vh;color:#666;">
@@ -212,7 +265,20 @@ def inject_css(html: str, dark: bool = False) -> str:
     return style + html
 
 
+def inject_page_js(html: str) -> str:
+    """Injeta o script de paginação no fim do <body> (ou no fim do HTML)."""
+    script = f"<script>{_PAGE_JS}</script>"
+    m = re.search(r"</body\s*>", html, re.IGNORECASE)
+    if m:
+        return html[: m.start()] + script + html[m.start():]
+    m = re.search(r"</html\s*>", html, re.IGNORECASE)
+    if m:
+        return html[: m.start()] + script + html[m.start():]
+    return html + script
+
+
 def prepare_chapter(raw_html: str, chapter_path: str, epub: Epub, dark: bool = False) -> str:
-    """Prepara o HTML do capítulo: recursos inline + CSS do leitor."""
+    """Prepara o HTML do capítulo: recursos inline + CSS do leitor + paginação."""
     html = inline_local_resources(raw_html, chapter_path, epub)
-    return inject_css(html, dark)
+    html = inject_css(html, dark)
+    return inject_page_js(html)

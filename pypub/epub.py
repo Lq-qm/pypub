@@ -14,12 +14,36 @@ import zipfile
 from dataclasses import dataclass
 
 _CONTAINER_NS = "{urn:oasis:names:tc:opendocument:xmlns:container}"
-_OPF_NS = "{http://www.idpf.org/2009/opf}"
-_DC_NS = "{http://purl.org/dc/elements/1.1/}"
+_DC_NS = "{http://purl.org/dc/elements/1.1/}"  # idêntico no EPUB 2 e no EPUB 3
 
 
 class EpubError(Exception):
     """Erro ao abrir ou ler um arquivo EPUB."""
+
+
+# ------------------------------------------------------------------ utilidades
+
+def _local(tag: object) -> str:
+    """Nome local de um tag (sem namespace); vazio para tags de comentário/PI."""
+    return tag.rsplit("}", 1)[-1] if isinstance(tag, str) else ""
+
+
+def _find_child(el: ET.Element, name: str) -> ET.Element | None:
+    """Filho imediato por **nome local**, agnóstico de namespace.
+
+    O pacote OPF usa namespaces diferentes conforme a versão (``2007/opf``
+    no EPUB 2, ``2009/opf`` no EPUB 3) — e alguns geradores omitem o
+    namespace — então a busca por ``{ns}nome`` quebraria em livros válidos.
+    """
+    for child in el:
+        if _local(child.tag) == name:
+            return child
+    return None
+
+
+def _findall_local(el: ET.Element, name: str) -> list[ET.Element]:
+    """Todos os filhos imediatos cujo nome local é ``name``."""
+    return [child for child in el if _local(child.tag) == name]
 
 
 @dataclass(frozen=True)
@@ -95,11 +119,11 @@ class Epub:
                 creator = el.text.strip()
 
         # ---- manifest ----------------------------------------------------
-        manifest_el = opf.find(f"{_OPF_NS}manifest")
+        manifest_el = _find_child(opf, "manifest")
         if manifest_el is None:
             raise EpubError("EPUB inválido: OPF sem <manifest>")
         manifest: dict[str, str] = {}
-        for item in manifest_el.findall(f"{_OPF_NS}item"):
+        for item in _findall_local(manifest_el, "item"):
             item_id = item.get("id")
             href = item.get("href")
             if not item_id or not href:
@@ -107,11 +131,11 @@ class Epub:
             manifest[item_id] = posixpath.normpath(posixpath.join(opf_dir, href))
 
         # ---- spine -------------------------------------------------------
-        spine_el = opf.find(f"{_OPF_NS}spine")
+        spine_el = _find_child(opf, "spine")
         if spine_el is None:
             raise EpubError("EPUB inválido: OPF sem <spine>")
         chapters: list[Chapter] = []
-        for itemref in spine_el.findall(f"{_OPF_NS}itemref"):
+        for itemref in _findall_local(spine_el, "itemref"):
             if (itemref.get("linear") or "yes").lower() == "no":
                 continue
             item_id = itemref.get("idref")
