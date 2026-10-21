@@ -208,6 +208,21 @@ valida, sem abrir display:
 - Persistência (ex.: `QSettings` ou JSON) de posição/zoom/tema;
 - Testes parametrizados (pytest) e CI com `QT_QPA_PLATFORM=offscreen`.
 
+## Solução de problemas
+
+**`ModuleNotFoundError: No module named 'pypub'`** ao rodar `uv run pypub` —
+o pacote do projeto não foi instalado de forma editável (o `.pth` está
+ausente do site-packages). Corrija com:
+
+```sh
+uv sync --reinstall-package pypub   # ou: uv pip install -e .
+```
+
+**Avisos Vulkan/GLX** (ex.: `QVulkanInstance: Failed to initialize
+Vulkan`, `GLX: No XCB Connection`) — inofensivos em ambientes sem display
+ou sem GPU (incluindo os testes offscreen); a interface segue funcionando
+com renderização por software.
+
 ## Notas de compatibilidade (Qt 6.12 / PySide6)
 
 Decisões tomadas por limitações reais da stack nesta versão:
