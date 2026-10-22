@@ -35,24 +35,27 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 - **Navegação por página** (anterior / próxima) — uma “página” é o que cabe
   numa viewport de altura; funciona com 1 ou 2 colunas, com indicador
   “p. N/M” no rodapé;
-- **Layout responsivo e centralizado**: **1 coluna** em janelas estreitas e,
-  no máximo, **2 colunas** quando a janela é larga o suficiente (CSS
-  multi-column + media query, reavaliada a cada redimensionamento); o bloco
-  de leitura fica **centralizado** na janela (não colado ao canto
-  superior esquerdo), mesmo em livros cujo CSS define margens no `body`;
-  em janelas estreitas o texto ocupa a largura disponível com respiro
-  lateral;
-- **Zoom** de texto (faixa 60%–250%) — capacidade mantida na bridge
-  (`zoomIn`/`zoomOut`/`resetZoom`); os botões de zoom (Aa−/Aa+/“1:1”) não
-  estão mais na toolbar (capacidade preservada para futura UI);
+- **Layout responsivo e centralizado**: o bloco de leitura fica
+  **centralizado** na janela (não colado ao canto superior esquerdo), mesmo
+  em livros cujo CSS define margens no `body`; em janelas estreitas o texto
+  ocupa a largura disponível com respiro lateral;
+- **Zoom sem escalar a página** (faixa 60%–250%): o `zoomFactor` da view
+  fica **1.0** — a página nunca escala fora do enquadramento. O zoom muda a
+  **fonte** (`18px × z`, via variável CSS `--pypub-zoom`) e o
+  **enquadramento** (zoom < 100% → **2 colunas/páginas**; zoom ≥ 100% →
+  **1 coluna/página**). Passados os limites de enquadramento, só a fonte
+  continua mudando. **Sem recarga** — a posição de leitura é preservada.
+  Controles: `Ctrl+=` / `Ctrl+-` / `Ctrl+0` na página e a bridge
+  (`zoomIn`/`zoomOut`/`resetZoom`);
 - **Tema claro / escuro seguindo o sistema do OS** (sem alternância manual —
   aplicado à interface e ao conteúdo, e re-renderizado ao vivo se o tema do
   sistema mudar com o app aberto);
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `Ctrl+←` / `Ctrl+→` (capítulos),
-  `PageUp` / `PageDown` (páginas) — funcionam com a view focada (tratados
-  no próprio documento) e sem foco (atalhos de janela);
+  `PageUp` / `PageDown` (páginas), `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom) —
+  funcionam com a view focada (tratados no próprio documento) e sem foco
+  (atalhos de janela);
 - **Testes headless** (offscreen) cobrindo parser, ponte Python↔QML,
   renderização e a janela Kirigami real.
 
@@ -109,13 +112,13 @@ pypub livro.epub
   `Ctrl+←` / `Ctrl+→`;
 - **Navegar por página**: “Pág. anterior” / “Pág. próxima” ou
   `PageUp` / `PageDown` (a posição exata fica no rodapé: “p. N/M”);
-- **Zoom**: a capacidade segue na bridge (`zoomIn`/`zoomOut`/`resetZoom`);
-  todos os botões de zoom (Aa−, Aa+ e “1:1”) foram removidos da toolbar a
-  pedido;
+- **Zoom**: `Ctrl+=` / `Ctrl+-` (ou a API `zoomIn`/`zoomOut` da bridge);
+  `Ctrl+0` / `resetZoom` volta a 100%. Zoom < 100% abre **2 colunas/páginas**
+  e reduz a fonte; zoom ≥ 100% fecha em **1 coluna/página** e amplia a fonte
+  (até 250%). A página **nunca é escalada** — o enquadramento e a posição de
+  leitura são preservados;
 - **Tema**: segue o esquema claro/escuro do sistema (ex.: `KColorScheme` no
-  KDE — Breeze/BreezeDark); não há botão de alternância;
-- **Rodar largo**: alargue a janela além de ~980 px para o texto virar
-  **2 colunas** (nunca mais que 2).
+  KDE — Breeze/BreezeDark); não há botão de alternância.
 
 ## Arquitetura
 
@@ -127,7 +130,8 @@ pypub livro.epub
 │  │            ← ToolButton/ToolBar do QtQuick.Controls               │
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
 │  │   • paginação: pypub_info/nextPage/prevPage via runJavaScript     │
-│  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome> (Ctrl+←/→)       │
+│  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome> (Ctrl+←/→, zoom)│
+│  │   • zoom: pypub_setZoom(z) no documento (fonte + enquadramento)   │
 │  ├── paginação: pypub_info/nextPage/prevPage via runJavaScript       │
 │  ├── atalhos: Shortcut de janela (view sem foco) + keydown na página │
 │  └── rodapé: status (capítulo/erros) + “p. N/M” + % zoom             │
@@ -136,7 +140,7 @@ pypub livro.epub
 ┌───────────────┴──────────────────────────────────────────────────────┐
 │  EpubBridge  (pypub/bridge.py)  — QObject com @Property/@Slot        │
 │  • estado: hasBook, bookTitle, chapterCount, currentIndex, zoom,     │
-│            dark, lastError                                            │
+│            columnCount, dark, lastError                               │
 │  • ações: openFile, closeBook, chooseFile, previous, next, goTo,     │
 │           zoomIn/Out, resetZoom, contentUrl, shutdown                │
 │  • tema: dark segue o OS (QStyleHints.colorScheme) + sinal ao vivo   │
@@ -162,11 +166,17 @@ pypub livro.epub
 ```
 
 **Fluxo de conteúdo:** a *bridge* é a única dona do estado. Quando o livro,
-a posição, o tema ou o zoom mudam, ela prepara o HTML **pronto** (recursos
+a posição ou o tema mudam, ela prepara o HTML **pronto** (recursos
 inline + CSS do leitor + script de paginação), o **serve** no servidor local
 e emite `contentChanged(url)` com a URL `http://127.0.0.1:<porta>/chapter/N?r=R`.
 O QML apenas reage: `reader.url = Qt.url(url)`. O QML **não** conhece o
-parser nem o renderer.
+parser nem o renderer. **Zoom não recarrega**: o `zoomChanged` do QML aplica
+`pypub_setZoom(z)` no documento já carregado (fonte + enquadramento).
+
+> **Guarde de documento antigo:** a resposta de `pypub_info()` traz a URL do
+> documento que a respondeu (`src`), e o QML **descarta** info cujo `src` não
+> casa com a URL atual da view. Assim, uma navegação em curso (URL nova, DOM
+> ainda antigo) nunca sobrescreve o indicador da página nova com estado velho.
 
 > **Por que um servidor local em vez de `loadHtml(html)`?** No Qt 6.12 a view
 > QML **não expõe** `load(url)`, e `loadHtml(html)` é **instável para HTML
@@ -177,10 +187,20 @@ parser nem o renderer.
 
 ## Como a renderização funciona
 
-- **Colunas**: o CSS do leitor usa `columns: 2` dentro de
-  `@media (min-width: 980px)`. Abaixo disso, 1 coluna. O WebEngine reavalia a
-  media query automaticamente a cada redimensionamento da janela — por isso a
-  view “se adapta” sem recarregar a página.
+- **Colunas (enquadramento de zoom)**: o enquadramento é dirigido pelo
+  **zoom**, não pela largura da janela — `pypub_setZoom(z)` liga a classe
+  `pypub-2col` no `<html>` quando `z < 1.0` (`columns: 2`), e remove para
+  `z ≥ 1.0` (1 coluna). Como é uma classe (e não media query), a troca é
+  explícita e instantânea, sem recarregar a página. Nunca passa de 2
+  colunas.
+- **Zoom (fonte + enquadramento, sem escala)**: a view mantém
+  `zoomFactor: 1.0` — o zoom **não escala a página**. A fonte do corpo é
+  `18px × var(--pypub-zoom)` e o enquadramento segue `--pypub-zoom` < 1 →
+  2 colunas. Faixa clampada em 0.6–2.5: abaixo de 100% o enquadramento já
+  está no máximo (2 colunas) e só a fonte diminui; acima de 100% o
+  enquadramento já está no mínimo (1 coluna) e só a fonte aumenta.
+  `pypub_setZoom` aplica `--pypub-zoom` + classe no documento; a posição de
+  leitura (página atual) é preservada.
 - **Centralização**: o bloco de leitura tem `max-width` (44em / 70em em 2
   colunas) e `margin: 0 auto` — em janelas largas, centralizado; em janelas
   estreitas, ocupa a largura com padding lateral de 32px.
@@ -220,13 +240,16 @@ parser nem o renderer.
     navegam a página; `Ctrl+←`/`Ctrl+→` escrevem a ação no fragmento da URL;
   - com a **view sem foco**, os itens `Shortcut` de janela disparam
     (ficam inativos enquanto `reader.activeFocus` — `enabled: !reader.activeFocus`).
-- **Canal JS→Python (troca de capítulo pelo teclado)** — o `QWebChannel`
+- **Canal JS→Python (teclado na página)** — o `QWebChannel`
   não funciona neste wheel do PySide6 (o tipo QML não carrega, e a
   propriedade `webChannel` da view exige `QQmlWebChannel`, que não tem
   binding Python). O canal usado é o **fragmento da URL**: a página chama
   `history.replaceState(null, "", "#pypub:cmd:<nome>")` (sem entrada no
   histórico) e o `onUrlChanged` do QML lê o fragmento, executa a ação
-  (`bridge.next()`/`bridge.previous()`) e limpa o fragmento.
+  (`bridge.next()`/`bridge.previous()`/`bridge.zoomIn()`/`zoomOut()`/
+  `resetZoom()`) e limpa o fragmento. NB: o `replaceState` só funciona no
+  **documento atual** da view — no documento antigo (navegação em curso) a
+  URL da view já é a nova e o `urlChanged` não dispara.
 - **Quando o indicador é preenchido**: a view termina o estado `loading`
   **antes** do `<script>` de paginação executar (`document.readyState` ainda
   `loading`), então um refresh único em `onLoadingChanged` ficaria em “p. 1/1”.
@@ -246,18 +269,25 @@ valida, sem abrir display:
 1. **Parser** — título/autor, 3 capítulos, normalização de caminho,
    inline de imagem/CSS, CSS responsivo presente, rejeição de EPUB inválido;
 2. **Bridge + renderização** — abre o livro, espera o conteúdo na
-   `WebEngineView` (texto, imagem com `naturalWidth > 0`,
-   `columnCount == 2` em janela de 1400 px), valida a **paginação**
-   (`pypub_info`, `nextPage`, `prevPage`, `goToPage`, clamps), navega
-   (next/previous/goTo), ajusta zoom, trata erro de arquivo inexistente,
-   valida **livro real EPUB 2** (capítulo longo servido via HTTP local +
-   paginação), captura screenshot e valida o estado vazio após fechar;
+   `WebEngineView` (texto, imagem com `naturalWidth > 0`), valida a
+   **paginação** (`pypub_info`, `nextPage`, `prevPage`, `goToPage`,
+   clamps), navega (next/previous/goTo), valida o **zoom sem escala**
+   (zoom < 1 → 2 colunas + fonte menor; zoom > 1 → 1 coluna + fonte maior;
+   clamps em 0.6/2.5; posição de leitura preservada; `bridge.columnCount`),
+   trata erro de arquivo inexistente, valida **livro real EPUB 2**
+   (capítulo longo servido via HTTP local + paginação + centralização),
+   captura screenshot e valida o estado vazio após fechar;
 3. **QML Kirigami (UI real)** — carrega o `Main.qml` real, cria a janela,
    abre um livro com a UI viva e confere o título, o indicador “p. N/M”
-   (polling), `nextPage`/`prevPage`, **clique em `ToolButton`** (evento de
-   mouse direto no item), **teclado na página** (`PageDown`/`PageUp` via
-   `keydown` do documento) e o **canal JS→Python** (`Ctrl+→` no documento →
-   fragmento de URL → `bridge.next()`).
+   (polling, com **descarte de info de documento antigo** — `src` da
+   resposta precisa casar com a URL da view), `nextPage`/`prevPage`,
+   **clique em `ToolButton`** (evento de mouse direto no item, com retry —
+   a entrega de eventos no offscreen é instável), **teclado na página**
+   (`PageDown`/`PageUp` via `keydown` do documento), o **canal JS→Python**
+   (`Ctrl+→` no documento → fragmento de URL → `bridge.next()`, esperando o
+   capítulo novo carregar antes do próximo passo) e o **zoom via teclado**
+   (`Ctrl+=` → `bridge.zoomIn()` → documento com fonte/enquadramento
+   aplicados, sem recarga).
 
 > O teste gera um EPUB de exemplo em `/tmp/pypub_sample.epub` (via
 > `tools/make_sample_epub.py`) e salva a screenshot em `/tmp/pypub_shot.png`.
@@ -364,7 +394,7 @@ Decisões tomadas por limitações reais da stack nesta versão:
 - **`data:` URIs em vez de schema customizado** — `QWebEngineUrlReply` não
   está disponível no PySide6 6.12.
 - **Root de teste = `Window`** — com root `Rectangle` o viewport da
-  `WebEngineView` fica com largura 0 (media query de 2 colunas não dispara);
+  `WebEngineView` fica com largura 0 (o layout/colunas não se resolvem);
   `Window` garante um viewport real offscreen.
 - **Priorizar o QML do wheel do PySide6** no `QML2_IMPORT_PATH` evita carregar
   plugins/ libs Qt do sistema incompatíveis com as libs dos bindings

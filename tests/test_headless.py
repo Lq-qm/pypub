@@ -215,7 +215,10 @@ Window {{
         id: reader
         objectName: "reader"
         anchors.fill: parent
-        zoomFactor: bridge ? bridge.zoom : 1.0
+        // zoom NÃO escala a view (enquadramento fixo) — a fonte e as colunas
+        // são dirigidas por pypub_setZoom no documento (ver applyZoomToPage
+        // no Main.qml)
+        zoomFactor: 1.0
         backgroundColor: bridge ? bridge.pageBackground : "white"
         Component.onCompleted: {{
             function onContent(url) {{
@@ -292,8 +295,29 @@ def test_bridge_and_render(app):
     img_ok = wait_js(root, "var i = document.querySelector('img'); i ? (i.naturalWidth > 0) : false",
                      lambda v: v in (True, "true", "True"))
     assert img_ok in (True, "true", "True"), f"imagem não renderizou: {img_ok!r}"
-    cols = wait_js(root, "getComputedStyle(document.body).columnCount", lambda c: str(c) == "2")
-    assert str(cols) == "2", f"esperado 2 colunas (largura 1400), obtido: {cols!r}"
+    # zoom: 100% padrão → 1 coluna (enquadramento máximo); a view não escala
+    zi = wait_js(root, "typeof pypub_zoomInfo==='function' ? pypub_zoomInfo() : null",
+                 lambda v: v is not None and v.get("zoom") == 1.0)
+    assert zi and zi.get("columns") == 1, f"zoom 100% deveria ter 1 coluna: {zi!r}"
+    assert abs(float(zi.get("fontSize", 0)) - 18.0) < 0.5, f"fonte base 18px: {zi!r}"
+
+    # zoom out (0.9) → 2 colunas (enquadramento mínimo) + fonte diminui
+    zi = wait_js(root, "pypub_setZoom(0.9) ? pypub_zoomInfo() : null",
+                 lambda v: v is not None and v.get("columns") == 2)
+    assert zi.get("zoom") == 0.9, f"zoom não aplicado: {zi!r}"
+    assert abs(zi.get("fontSize", 0) - 16.2) < 0.5, f"fonte 16.2px em 90%: {zi!r}"
+
+    # zoom in (1.1) → volta a 1 coluna + fonte cresce
+    zi = wait_js(root, "pypub_setZoom(1.1) ? pypub_zoomInfo() : null",
+                 lambda v: v is not None and v.get("columns") == 1 and v.get("zoom") == 1.1)
+    assert abs(zi.get("fontSize", 0) - 19.8) < 0.5, f"fonte 19.8px em 110%: {zi!r}"
+
+    # clamps no JS: abaixo de 60% e acima de 250% o enquadramento não quebra
+    zi = wait_js(root, "pypub_setZoom(0.3) ? pypub_zoomInfo() : null", lambda v: v is not None)
+    assert zi.get("zoom") == 0.6 and zi.get("columns") == 2, f"clamp inferior: {zi!r}"
+    zi = wait_js(root, "pypub_setZoom(9) ? pypub_zoomInfo() : null", lambda v: v is not None)
+    assert zi.get("zoom") == 2.5 and zi.get("columns") == 1, f"clamp superior: {zi!r}"
+    wait_js(root, "pypub_setZoom(1.0)", lambda v: v is True)
 
     # paginação (uma “página” = uma viewport de altura)
     info = wait_js(root, "typeof pypub_info === 'function' ? pypub_info() : null",
@@ -313,12 +337,26 @@ def test_bridge_and_render(app):
                   lambda v: v is not None and v.get("current") == 3)
     assert res and res.get("current") == 3, f"pypub_goToPage(3) falhou: {res!r}"
 
+    # zoom NÃO reseta a posição de leitura (não há recarga: só fonte +
+    # enquadramento mudam) — em 0.8 (2 colunas) o conteúdo encolhe e a
+    # página atual é mantida (ou, no limite, clampada à última)
+    wait_js(root, "pypub_setZoom(0.8)", lambda v: v is True)
+    res = wait_js(root, "pypub_info()",
+                  lambda v: v is not None and (v.get("current") == 3
+                                               or v.get("current") == v.get("total")))
+    assert res.get("current") == 3 or res.get("current") == res.get("total"), (
+        f"zoom deslocou a leitura (esperado p.3 ou clamp, obtido "
+        f"p.{res.get('current')} de {res.get('total')})")
+    wait_js(root, "pypub_setZoom(1.0)", lambda v: v is True)
+
     # clamp: não passa da última nem fica antes da primeira
+    # (autocontido: vai à última página e tenta avançar — o total depende do
+    # zoom/enquadramento atual, então é lido em runtime)
     res = wait_js(root,
                   "(function(){if(typeof pypub_nextPage!=='function')return null;"
-                  "pypub_nextPage();pypub_nextPage();pypub_nextPage();return pypub_info();})()",
+                  "pypub_goToPage(pypub_info().total);pypub_nextPage();return pypub_info();})()",
                   lambda v: v is not None)
-    assert res and res.get("current") == info["total"], f"clamp superior falhou: {res!r}"
+    assert res and res.get("current") == res.get("total"), f"clamp superior falhou: {res!r}"
     res = wait_js(root,
                   "(function(){if(typeof pypub_goToPage!=='function')return null;"
                   "pypub_goToPage(1);pypub_prevPage();return pypub_info();})()",
@@ -343,12 +381,18 @@ def test_bridge_and_render(app):
     wait_js(root, "document.body ? document.body.innerText : ''",
             lambda h: "Capítulo Três" in (h or ""))
 
-    # zoom (a view QML segue bridge.zoom via binding)
-    # NB: o PySide6 tipa o @Property como `Property`; o acesso é dinâmico em runtime.
-    bridge.zoomIn()
+    # zoom (bridge): faixa 60%–250% e enquadramento derivado (≥100% → 1
+    # coluna; <100% → 2 colunas). NB: o PySide6 tipa o @Property como
+    # `Property`; o acesso é dinâmico em runtime.
+    bridge.zoomIn()  # 1.1 → 1 coluna
     assert abs(float(bridge.zoom) - 1.1) < 1e-6  # type: ignore[call-arg]
+    assert int(bridge.columnCount) == 1, "zoom ≥ 100% → 1 coluna"  # type: ignore[call-arg]
+    bridge.zoomOut()  # 1.0 → ainda 1 coluna (ponto de quebra)
+    bridge.zoomOut()  # 0.9 → 2 colunas
+    assert int(bridge.columnCount) == 2, "zoom < 100% → 2 colunas"  # type: ignore[call-arg]
     bridge.resetZoom()
     assert abs(float(bridge.zoom) - 1.0) < 1e-6  # type: ignore[call-arg]
+    assert int(bridge.columnCount) == 1  # type: ignore[call-arg]
 
     # erro ao abrir livro inexistente
     assert not bridge.openFile("/tmp/nao_existe.epub")
@@ -464,6 +508,39 @@ def test_qml(app):
     wait_view_idle(reader)
     app.processEvents()
 
+    def page_js(script):
+        # hook dbgScript/dbgResult no Main.qml (runJavaScript a partir do
+        # Python não entrega callback nesta view — QQuickWebEngineView)
+        win.setProperty("dbgResult", None)
+        win.setProperty("dbgScript", script)
+        t0 = time.time()
+        while time.time() - t0 < 10:
+            app.processEvents()
+            time.sleep(0.05)
+            if win.property("dbgResult") is not None:
+                break
+        r = win.property("dbgResult")
+        win.setProperty("dbgScript", "")
+        return r
+
+    def wait_current_document(timeout=30.0):
+        # espera o documento carregado corresponder à URL atual da bridge;
+        # sem isso, navegação em curso deixa o teste operando sobre o
+        # documento anterior (a URL da view já é a nova, mas o DOM ainda é
+        # o antigo — e history.replaceState nele não dispara urlChanged na
+        # view, pois a URL dela já é a do documento novo)
+        target = str(bridge.contentUrl() or "")
+        if not target:
+            return True
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            href = str(page_js("location.href") or "")
+            if href.split("#")[0] == target.split("#")[0]:
+                return True
+            app.processEvents()
+            time.sleep(0.1)
+        return False
+
     title = win.property("title") or ""
     assert "EPUB de Exemplo" in str(title), f"título inesperado: {title}"
 
@@ -479,11 +556,20 @@ def test_qml(app):
         bridge.openFile(book)
         bridge.goTo(4)  # capítulo longo
 
+    # o documento novo precisa estar de fato carregado na view antes de
+    # operar sobre ele (senão o teste age no documento anterior — a URL da
+    # view já é a nova, mas o DOM ainda é o antigo)
+    assert wait_current_document(), "documento do capítulo atual não carregou na view"
+
     t0 = time.time()
     while (win.property("pageCount") or 1) < 2 and time.time() - t0 < 30:
         app.processEvents()
         time.sleep(0.1)
     assert (win.property("pageCount") or 1) >= 2, "indicador de página não populado na UI"
+    t0 = time.time()
+    while (win.property("currentPage") or 0) != 1 and time.time() - t0 < 10:
+        app.processEvents()
+        time.sleep(0.05)
     assert (win.property("currentPage") or 0) == 1, "currentPage deveria começar em 1"
 
     # caminho das funções da UI (o mesmo usado pelos botões da toolbar)
@@ -514,46 +600,48 @@ def test_qml(app):
                 return o
         return None
 
-    def click_item(item):
+    def click_and_wait(item, predicate, timeout=15.0):
+        # clique sintético com retry: a entrega de eventos mouse via
+        # sendEvent é instável no offscreen (o press pode não registrar no
+        # state machine do control antes do release) — repete até o efeito
+        # (predicate) ocorrer ou estourar o timeout
         x = float(item.property("width")) / 2
         y = float(item.property("height")) / 2
-        press = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(x, y), QPointF(x, y), QPointF(x, y),
-                            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
-        release = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(x, y), QPointF(x, y), QPointF(x, y),
-                              Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
-        app.sendEvent(item, press)
-        app.processEvents()
-        app.sendEvent(item, release)
-        app.processEvents()
+
+        def one_click():
+            press = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(x, y), QPointF(x, y), QPointF(x, y),
+                                Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+            app.sendEvent(item, press)
+            app.processEvents()
+            time.sleep(0.03)
+            app.processEvents()
+            release = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(x, y), QPointF(x, y), QPointF(x, y),
+                                  Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
+            app.sendEvent(item, release)
+            app.processEvents()
+            time.sleep(0.03)
+            app.processEvents()
+
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            one_click()
+            deadline = time.time() + 2
+            while time.time() < deadline:
+                app.processEvents()
+                time.sleep(0.05)
+                if predicate():
+                    return True
+        return bool(predicate())
 
     next_btn = find_button("Pág. próxima")
     assert next_btn is not None, "ToolButton 'Pág. próxima' não encontrado na toolbar"
     assert bool(next_btn.property("visible")), "ToolButton deveria ser visível"
     assert bool(next_btn.property("enabled")), "ToolButton deveria estar habilitado"
-    click_item(next_btn)
-    t0 = time.time()
-    while (win.property("currentPage") or 0) != 2 and time.time() - t0 < 10:
-        app.processEvents()
-        time.sleep(0.05)
-    assert (win.property("currentPage") or 0) == 2, "clique no ToolButton não trocou a página"
+    assert click_and_wait(next_btn, lambda: (win.property("currentPage") or 0) == 2), \
+        "clique no ToolButton não trocou a página"
     print("OK ToolButton clicável (Pág. próxima: 1 → 2)")
 
     # --- Teclado na página (keydown do documento: a view tem o foco na leitura) ---
-    def page_js(script):
-        # hook dbgScript/dbgResult no Main.qml (runJavaScript a partir do Python
-        # não entrega callback nesta view — QQuickWebEngineView)
-        win.setProperty("dbgResult", None)
-        win.setProperty("dbgScript", script)
-        t0 = time.time()
-        while time.time() - t0 < 10:
-            app.processEvents()
-            time.sleep(0.05)
-            if win.property("dbgResult") is not None:
-                break
-        r = win.property("dbgResult")
-        win.setProperty("dbgScript", "")
-        return r
-
     before = json.loads(page_js("JSON.stringify(pypub_info())"))
     page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'PageDown', bubbles: true}))")
     time.sleep(0.5)
@@ -581,11 +669,38 @@ def test_qml(app):
         time.sleep(0.1)
     i1 = int(bridge.currentIndex)  # type: ignore[call-arg]
     assert i1 == i0 + 1, f"Ctrl+→ não trocou o capítulo ({i0} -> {i1})"
+    # o capítulo novo ainda está carregando — o próximo keydown (Ctrl+=)
+    # precisa chegar ao documento novo; no documento antigo, replaceState
+    # não dispara urlChanged na view (a URL dela já é a do capítulo novo)
+    assert wait_current_document(), "documento do capítulo novo não carregou na view"
     print("OK canal JS→Python (Ctrl+→ : capítulo", i0, "→", i1, ")")
+
+    # --- Zoom via teclado (Ctrl+= no documento) → canal hash → bridge ---
+    # A página escreve #pypub:cmd:zoomin na URL; o onUrlChanged do QML chama
+    # bridge.zoomIn(); o onZoomChanged aplica pypub_setZoom no documento
+    # (fonte + enquadramento, sem recarga).
+    z0 = float(bridge.zoom)  # type: ignore[call-arg]
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: '=', ctrlKey: true, bubbles: true}))")
+    t0 = time.time()
+    while abs(float(bridge.zoom) - z0) < 1e-9 and time.time() - t0 < 20:  # type: ignore[call-arg]
+        app.processEvents()
+        time.sleep(0.1)
+    z1 = float(bridge.zoom)  # type: ignore[call-arg]
+    assert z1 > z0, f"Ctrl+= não deu zoom in ({z0} -> {z1})"
+    zi = json.loads(page_js("JSON.stringify(pypub_zoomInfo())"))
+    assert abs(zi["zoom"] - z1) < 0.01, f"documento ({zi['zoom']}) != bridge ({z1})"
+    assert zi["columns"] == (2 if z1 < 1.0 else 1), f"enquadramento errado: {zi!r}"
+    bridge.resetZoom()
+    app.processEvents()
+    print("OK zoom via teclado (Ctrl+= :", z0, "→", z1, "; documento:", zi["zoom"], ")")
 
     print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title,
           "| indicador p.", win.property("currentPage"), "/", win.property("pageCount"), ")")
     bridge.shutdown()
+    # fecha a JANELA antes do fim do processo: o teardown do WebEngine com a
+    # view ainda viva segfaulta no offscreen (teardown mínimo com close limpa)
+    win.close()
+    app.processEvents()
     return 0
 
 

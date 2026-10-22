@@ -3,9 +3,11 @@
 - inline de recursos locais do EPUB (imagens, CSS, fontes) como ``data:`` URIs
   (o PySide6 não expõe ``QWebEngineUrlReply``, então não usamos esquema
   customizado — inlinear é mais simples e robusto para o protótipo);
-- CSS responsivo: 1 coluna em janelas estreitas e, no máximo, 2 colunas
-  quando a janela é larga o suficiente (media query reavaliada a cada
-  redimensionamento).
+- CSS de leitura dirigido pelo zoom: a FONTE é controlada pelo zoom
+  (18px em 100%) e o ENQUADRAMENTO por colunas — zoom < 100% → 2 colunas
+  (2 páginas, o enquadramento mínimo), zoom ≥ 100% → 1 coluna (1 página, o
+  máximo). A página nunca escala fora do enquadramento (o zoomFactor da
+  view fica em 1.0): além dos limites de enquadramento, só a fonte muda.
 """
 
 from __future__ import annotations
@@ -32,11 +34,14 @@ html, body { margin: 0; padding: 0; }
 body, body[class] {
     margin: 0 auto;
     padding: 28px 32px 72px;
-    max-width: 44em;
+    /* Fonte dirigida pelo zoom (18px em 100%): --pypub-zoom é definido em
+       :root (valor inicial, conforme a bridge) e atualizado em runtime por
+       pypub_setZoom() — sem recarregar a página (posição de leitura intacta) */
+    font-size: calc(18px * var(--pypub-zoom, 1));
+    max-width: 44em;  /* 1 coluna (zoom ≥ 100%) */
 }
 body {
     font-family: "Noto Sans", "Segoe UI", "DejaVu Sans", sans-serif;
-    font-size: 18px;
     line-height: 1.75;
     text-align: justify;
     -webkit-hyphens: auto;
@@ -55,13 +60,14 @@ blockquote { margin: 0 0 1em; padding-left: 1em; border-left: 3px solid; opacity
 _LIGHT = """
 :root { color-scheme: light; }
 body, body[class] { color: #21252b; background: #fbfaf7; }
-@media (min-width: 980px) {
-    body, body[class] {
-        columns: 2;
-        column-gap: 44px;
-        column-rule: 1px solid rgba(0, 0, 0, 0.14);
-        max-width: 70em;
-    }
+/* 2 colunas (zoom < 100%): classe pypub-2col trocada em runtime por
+   pypub_setZoom() (ou já presente no <html> se a renderização inicial
+   já estava com zoom < 100%) */
+html.pypub-2col body, html.pypub-2col body[class] {
+    columns: 2;
+    column-gap: 44px;
+    column-rule: 1px solid rgba(0, 0, 0, 0.14);
+    max-width: 70em;
 }
 """
 
@@ -70,15 +76,24 @@ _DARK = """
 body, body[class] { color: #dfe3e8; background: #1f2328; }
 a { color: #79b8ff; }
 blockquote { border-color: rgba(255, 255, 255, 0.35); }
-@media (min-width: 980px) {
-    body, body[class] {
-        columns: 2;
-        column-gap: 44px;
-        column-rule: 1px solid rgba(255, 255, 255, 0.16);
-        max-width: 70em;
-    }
+/* 2 colunas (zoom < 100%) — ver _LIGHT */
+html.pypub-2col body, html.pypub-2col body[class] {
+    columns: 2;
+    column-gap: 44px;
+    column-rule: 1px solid rgba(255, 255, 255, 0.16);
+    max-width: 70em;
 }
 """
+
+#: ponto de quebra do enquadramento: zoom abaixo → 2 colunas (2 páginas);
+#: acima/igual → 1 coluna (1 página). A página nunca sai desses dois
+#: enquadramentos — além deles, só o tamanho da fonte muda.
+ZOOM_COLUMN_BREAK = 1.0
+
+
+def columns_for_zoom(zoom: float) -> int:
+    """Enquadramento por zoom: <100% → 2 colunas; ≥100% → 1 coluna."""
+    return 2 if zoom < ZOOM_COLUMN_BREAK else 1
 
 _PAGE_BG_LIGHT = "#fbfaf7"
 _PAGE_BG_DARK = "#1f2328"
@@ -92,7 +107,8 @@ _PAGE_BG_DARK = "#1f2328"
 #
 # Atalhos de teclado: durante a leitura a view tem o foco de teclado e os
 # ``Shortcut`` do QML (janela) ficam inativos (``enabled: !reader.activeFocus``)
-# — PageUp/PageDown e Ctrl+←/→ são tratados AQUI (keydown do documento).
+# — PageUp/PageDown, Ctrl+←/→ (capítulos) e Ctrl+= / Ctrl+- / Ctrl+0 (zoom)
+# são tratados AQUI (keydown do documento).
 # Ctrl+←/→ (troca de capítulo) atravessa o canal JS→Python: o QWebChannel não
 # funciona neste wheel do PySide6 (o tipo QML não carrega e a propriedade
 # webChannel da view exige QQmlWebChannel, que não tem binding Python), então
@@ -119,7 +135,10 @@ _PAGE_JS = """
     var sp = scrollPage();
     if (sp > state.page) state.page = sp;  // rolagem manual anda à frente
     state.page = Math.min(total() - 1, state.page);
-    return { current: state.page + 1, total: total() };
+    // src = URL deste documento: o QML descarta respostas de documentos
+    // antigos (durante a navegação a URL da view já é a nova, mas o DOM
+    // ainda é o anterior — e responderia com estado velho)
+    return { current: state.page + 1, total: total(), src: location.href };
   }
   function go(n) {
     var t = total();
@@ -142,6 +161,24 @@ _PAGE_JS = """
   }
   function nextChapter() { cmd("next"); }
   function prevChapter() { cmd("prev"); }
+  function zoomIn() { cmd("zoomin"); }
+  function zoomOut() { cmd("zoomout"); }
+  function zoomReset() { cmd("zoomreset"); }
+
+  // Zoom: a página NUNCA escala (o zoomFactor da view fica 1.0 — o
+  // enquadramento é preservado); muda só a fonte (18px * z, via
+  // --pypub-zoom) e o enquadramento (z < 1 → 2 colunas; z ≥ 1 → 1 coluna).
+  // Não há recarga: a posição de leitura (página atual) é mantida.
+  function setZoom(z) {
+    z = Number(z);
+    if (!(z > 0)) z = 1;
+    z = Math.max(0.6, Math.min(2.5, z));
+    var de = document.documentElement;
+    if (!de) return false;
+    de.style.setProperty("--pypub-zoom", String(z));
+    de.classList.toggle("pypub-2col", z < 1.0);
+    return true;
+  }
 
   if (window.addEventListener) {
     window.addEventListener("scroll", function () {
@@ -173,6 +210,15 @@ _PAGE_JS = """
         } else if (k === "ArrowLeft") {
           prevChapter();
           e.preventDefault(); e.stopPropagation();
+        } else if (k === "=" || k === "+") {
+          zoomIn();
+          e.preventDefault(); e.stopPropagation();
+        } else if (k === "-") {
+          zoomOut();
+          e.preventDefault(); e.stopPropagation();
+        } else if (k === "0") {
+          zoomReset();
+          e.preventDefault(); e.stopPropagation();
         }
       }
     }, true);
@@ -182,6 +228,20 @@ _PAGE_JS = """
   window.pypub_goToPage = function (n) { return go(n - 1); };
   window.pypub_nextPage = function () { return go(state.page + 1); };
   window.pypub_prevPage = prevPage;
+  // zoom: aplica fonte + enquadramento sem recarga (ver setZoom acima)
+  window.pypub_setZoom = setZoom;
+  // diagnóstico/teste: o zoom efetivamente aplicado no documento
+  window.pypub_zoomInfo = function () {
+    var v = getComputedStyle(document.documentElement).getPropertyValue("--pypub-zoom");
+    var z = parseFloat(v);
+    if (!(z > 0)) z = 1;
+    var b = document.body;
+    return {
+      zoom: z,
+      columns: b ? (parseInt(getComputedStyle(b).columnCount, 10) || 1) : 1,
+      fontSize: b ? parseFloat(getComputedStyle(b).fontSize) : 18
+    };
+  };
   // diagnóstico/teste: estado da paginação
   window.pypub_debug = function () {
     return { page: state.page + 1, total: total(), scrollY: window.scrollY };
@@ -315,9 +375,29 @@ def inline_local_resources(html: str, chapter_path: str, epub: Epub) -> str:
 
 
 # --------------------------------------------------------------------- injeção
-def inject_css(html: str, dark: bool = False) -> str:
-    """Injeta o CSS do leitor no HTML do capítulo."""
-    style = f"<style>{_BASE_CSS}{_DARK if dark else _LIGHT}</style>"
+def _set_html_class(html: str, cls: str) -> str:
+    """Adiciona ``cls`` à tag ``<html>`` (usado para o estado inicial pypub-2col)."""
+    m = re.search(r"<html\b[^>]*>", html, re.IGNORECASE)
+    if not m:
+        return html
+    tag = m.group(0)
+    if re.search(r"\bclass\s*=", tag, re.IGNORECASE):
+        new_tag = re.sub(
+            r"""(class\s*=\s*["'])([^"']*)""",
+            rf"\1\2 {cls}",
+            tag,
+            count=1,
+            flags=re.IGNORECASE,
+        )
+    else:
+        new_tag = tag[: -1] + f' class="{cls}>"'
+    return html[: m.start()] + new_tag + html[m.end() :]
+
+
+def inject_css(html: str, dark: bool = False, zoom: float = 1.0) -> str:
+    """Injeta o CSS do leitor no HTML do capítulo (``zoom`` = escala inicial da fonte)."""
+    zoom_rule = f":root {{ --pypub-zoom: {zoom:g}; }}"
+    style = f"<style>{_BASE_CSS}{zoom_rule}{_DARK if dark else _LIGHT}</style>"
     m = re.search(r"</head\s*>", html, re.IGNORECASE)
     if m:
         return html[: m.start()] + style + html[m.start() :]
@@ -341,8 +421,16 @@ def inject_page_js(html: str) -> str:
     return html + script
 
 
-def prepare_chapter(raw_html: str, chapter_path: str, epub: Epub, dark: bool = False) -> str:
-    """Prepara o HTML do capítulo: recursos inline + CSS do leitor + paginação."""
+def prepare_chapter(
+    raw_html: str, chapter_path: str, epub: Epub, dark: bool = False, zoom: float = 1.0
+) -> str:
+    """Prepara o HTML do capítulo: recursos inline + CSS do leitor + paginação.
+
+    ``zoom`` fixa o estado INICIAL de fonte/enquadramento (o ajuste em
+    runtime é feito por ``pypub_setZoom`` no documento, sem recarga).
+    """
     html = inline_local_resources(raw_html, chapter_path, epub)
-    html = inject_css(html, dark)
+    if columns_for_zoom(zoom) == 2:
+        html = _set_html_class(html, "pypub-2col")
+    html = inject_css(html, dark, zoom)
     return inject_page_js(html)

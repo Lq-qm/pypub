@@ -17,7 +17,7 @@ import logging
 from PySide6.QtCore import QObject, Property, Signal, Slot
 
 from .epub import Epub, EpubError, chapter_title
-from .renderer import empty_html, page_background, prepare_chapter
+from .renderer import columns_for_zoom, empty_html, page_background, prepare_chapter
 from .server import ChapterServer
 
 _log = logging.getLogger(__name__)
@@ -141,6 +141,11 @@ class EpubBridge(QObject):
     def zoom(self) -> float:
         return self._zoom
 
+    @Property(int, notify=zoomChanged)
+    def columnCount(self) -> int:
+        """Enquadramento por zoom: <100% → 2 colunas; ≥100% → 1 coluna."""
+        return columns_for_zoom(self._zoom)
+
     # ----------------------------------------------------------------- slots
     @Slot(str, result=bool)
     def openFile(self, path: str) -> bool:
@@ -211,7 +216,9 @@ class EpubBridge(QObject):
             raw = self._epub.read(ch.path)
         except KeyError:
             return empty_html(self._dark)
-        return prepare_chapter(raw.decode("utf-8", "replace"), ch.path, self._epub, self._dark)
+        return prepare_chapter(
+            raw.decode("utf-8", "replace"), ch.path, self._epub, self._dark, zoom=self._zoom
+        )
 
     @Slot(result=str)
     def contentUrl(self) -> str:
@@ -241,6 +248,9 @@ class EpubBridge(QObject):
 
     # ------------------------------------------------------------------ utils
     def _set_zoom(self, value: float) -> None:
+        # A mudança chega ao documento via QML → pypub_setZoom (fonte +
+        # enquadramento) SEM recarregar a página; o estado inicial de uma
+        # renderização nova já sai certo (currentHtml passa o zoom).
         value = max(_ZOOM_MIN, min(_ZOOM_MAX, round(value, 2)))
         if abs(value - self._zoom) < 1e-9:
             return
@@ -258,7 +268,8 @@ class EpubBridge(QObject):
 
         A URL muda a cada emissão (``?r=<revisão>``): atribuir a mesma URL
         de novo não recarrega a view, então a revisão garante o reload —
-        inclusive para trocas de tema/zoom no mesmo capítulo.
+        inclusive para troca de tema no mesmo capítulo (zoom NÃO recarrega:
+        é aplicado no documento via pypub_setZoom).
         """
         if self._epub is not None:
             ch = self._epub.chapters[self._index]

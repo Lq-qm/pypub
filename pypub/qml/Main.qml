@@ -28,16 +28,39 @@ K.ApplicationWindow {
     title: hasBook ? (bookTitle + " — PyPub") : "PyPub"
 
     function _applyPageInfo(res) {
-        if (res && res.current) {
-            window.currentPage = res.current
-            window.pageCount = res.total
+        if (!res || !res.current) return false
+        // descarta info de documento antigo: durante a navegação a URL da
+        // view já é a nova, mas o DOM ainda é o anterior (e sua pypub_info()
+        // responderia com estado velho, sobrescrevendo o indicador da
+        // página nova)
+        if (res.src) {
+            var src = String(res.src).split("#")[0]
+            var cur = String(reader.url).split("#")[0]
+            if (cur && src !== cur)
+                return false
         }
+        window.currentPage = res.current
+        window.pageCount = res.total
+        return true
     }
 
     function refreshPageInfo() {
         reader.runJavaScript(
             "typeof pypub_info === 'function' ? pypub_info() : null",
             function(res) { window._applyPageInfo(res) })
+    }
+
+    // Zoom: aplica ao documento JÁ CARREGADO sem recarregar a página
+    // (pypub_setZoom atualiza a fonte e a classe de enquadramento — a
+    // posição de leitura é mantida). A view nunca escala (zoomFactor 1.0);
+    // zoom ≥ 100% → 1 coluna (página única); zoom < 100% → 2 colunas.
+    // Acontecido o re-layout, o nº de páginas pode mudar → reavaliamos.
+    function applyZoomToPage() {
+        if (!window.hasBook) return
+        var z = Number(window.zoom)
+        reader.runJavaScript(
+            "typeof pypub_setZoom === 'function' ? pypub_setZoom(" + z + ") : false",
+            function(ok) { if (ok) window.refreshPageInfo() })
     }
 
     // A view termina "loading" ANTES do <script> de paginação executar
@@ -59,12 +82,11 @@ K.ApplicationWindow {
             reader.runJavaScript(
                 "typeof pypub_info === 'function' ? pypub_info() : null",
                 function(res) {
-                    if (res && res.current) {
-                        window._applyPageInfo(res)
+                    // só para quando a info for do documento atual (ou após
+                    // o teto de tentativas) — resposta de documento antigo
+                    // não vale como "pronto" (p. ex. estado vazio)
+                    if (window._applyPageInfo(res) || window.pageInfoAttempts >= 25)
                         pageInfoTimer.stop()
-                    } else if (window.pageInfoAttempts >= 25) {
-                        pageInfoTimer.stop()  // desiste (p. ex. estado vazio)
-                    }
                 })
         }
     }
@@ -159,7 +181,10 @@ K.ApplicationWindow {
             id: reader
             objectName: "reader"
             anchors.fill: parent
-            zoomFactor: window.zoom
+            // A página NUNCA escala fora do enquadramento: o zoom age sobre
+            // a fonte (18px * z) e o enquadramento (1 ou 2 colunas) via
+            // pypub_setZoom (applyZoomToPage, acima) — não sobre a view.
+            zoomFactor: 1.0
             backgroundColor: bridge ? bridge.pageBackground : "white"
             // O conteúdo é servido por um servidor local (127.0.0.1): loadHtml
             // é instável para HTML grande no Qt 6.12 e a view não expõe load().
@@ -169,8 +194,12 @@ K.ApplicationWindow {
             }
             // este build não expõe loadFinished(); usa a propriedade loading
             onLoadingChanged: {
-                if (!loading)
+                if (!loading) {
+                    // garante o estado de zoom após o load (a renderização
+                    // inicial já sai certa; isso cobre zoom mudando no load)
+                    window.applyZoomToPage()
                     window.startPageInfoPolling()
+                }
             }
             // Canal JS→Python: com a view focada (estado normal de leitura),
             // Ctrl+←/→ são tratados pelo <script> da página (renderer._PAGE_JS),
@@ -190,6 +219,12 @@ K.ApplicationWindow {
                         bridge ? bridge.next() : undefined
                     } else if (action === "prev") {
                         bridge ? bridge.previous() : undefined
+                    } else if (action === "zoomin") {
+                        bridge ? bridge.zoomIn() : undefined
+                    } else if (action === "zoomout") {
+                        bridge ? bridge.zoomOut() : undefined
+                    } else if (action === "zoomreset") {
+                        bridge ? bridge.resetZoom() : undefined
                     }
                     // limpa o fragmento (sem deixar no histórico); urlChanged
                     // dispara de novo sem o prefixo → inócuo
@@ -249,9 +284,10 @@ K.ApplicationWindow {
             // cobertura extra: nem sempre onLoadingChanged dispara a tempo
             window.startPageInfoPolling()
         }
-        // zoom altera a altura do conteúdo → o nº de páginas muda
+        // zoom: aplica ao documento sem recarga e reavalua a paginação
+        // (a altura do conteúdo muda com a fonte/enquadramento)
         function onZoomChanged() {
-            window.refreshPageInfo()
+            window.applyZoomToPage()
         }
     }
 
