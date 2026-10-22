@@ -255,6 +255,26 @@ def test_bridge_and_render(app):
     assert bridge.chapterCount == 0
     assert bridge.emptyHtml != ""
 
+    # tema segue o sistema (sem alternância manual): offscreen → Unknown → claro
+    assert isinstance(bridge.dark, bool)
+    assert bridge.pageBackground in ("#fbfaf7", "#1f2328"), bridge.pageBackground
+
+    # o handler do sinal colorSchemeChanged re-renderiza com o novo tema
+    # (simula a troca no OS, sem depender da plataforma)
+    import pypub.bridge as _bmod
+
+    orig = _bmod._system_dark
+    _bmod._system_dark = lambda: not bridge.dark
+    try:
+        before_url = bridge.contentUrl()
+        bridge._on_system_color_scheme()
+        assert bridge.dark != orig(), "tema não inverteu"
+        assert bridge.pageBackground in ("#fbfaf7", "#1f2328")
+        assert bridge.contentUrl() != before_url, "conteúdo não foi re-servido após troca de tema"
+    finally:
+        _bmod._system_dark = orig
+        bridge._on_system_color_scheme()  # volta ao valor real do sistema
+
     # abre o livro com a view QML já ligada
     root, reader = build_qml_view(bridge, app)
     assert bridge.openFile(SAMPLE)

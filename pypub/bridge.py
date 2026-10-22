@@ -12,15 +12,45 @@ navega normalmente — sem limite de tamanho.
 
 from __future__ import annotations
 
+import logging
+
 from PySide6.QtCore import QObject, Property, Signal, Slot
 
 from .epub import Epub, EpubError, chapter_title
 from .renderer import empty_html, page_background, prepare_chapter
 from .server import ChapterServer
 
+_log = logging.getLogger(__name__)
+
 _ZOOM_MIN = 0.6
 _ZOOM_MAX = 2.5
 _ZOOM_STEP = 0.1
+
+
+def _system_dark() -> bool:
+    """Esquema de cor do **sistema operacional** (via tema de plataforma do Qt).
+
+    ``QStyleHints.colorScheme()`` reflete o esquema global do OS (no KDE, a
+    ``KColorScheme`` — ex.: Breeze/BreezeDark; no GTK, a variante dark). Em
+    plataformas que não expõem (ex.: ``offscreen``, usada nos testes), o valor
+    é ``Unknown`` → padrão claro.
+
+    NB: o PySide6 não expõe as constantes do enum ``ColorScheme`` (nem na
+    classe nem no módulo), então a comparação é feita no nome (``str`` devolve
+    ``"ColorScheme.Dark"`` / ``"ColorScheme.Light"`` / ``"ColorScheme.Unknown"``).
+    """
+    try:
+        from PySide6.QtWidgets import QApplication
+
+        app = QApplication.instance()
+        if app is not None:
+            # o linter tipa QApplication.instance() como QCoreApplication
+            # (sem styleHints); em runtime é QApplication (QtWidgets)
+            hints = app.styleHints()  # type: ignore[union-attr]
+            return "Dark" in str(hints.colorScheme())
+    except Exception:
+        _log.debug("falha ao ler o esquema de cor do sistema; padrão claro", exc_info=True)
+    return False
 
 
 class EpubBridge(QObject):
@@ -39,7 +69,8 @@ class EpubBridge(QObject):
         self._epub: Epub | None = None
         self._index = 0
         self._zoom = 1.0
-        self._dark = False
+        # tema segue o **sistema** (sem alternância manual) — ver _system_dark()
+        self._dark = _system_dark()
         self._last_error = ""
         self._last_dir = ""
         self._server = ChapterServer()
@@ -47,6 +78,17 @@ class EpubBridge(QObject):
         self._last_url = ""
         # estado inicial: página vazia já servida e URL válida para o QML
         self._emit_content()
+        # tema do OS pode mudar com o app aberto (ex.: alternar Breeze/BreezeDark
+        # no Plasma): o sinal é emitido ao vivo e a gente re-renderiza
+        try:
+            from PySide6.QtWidgets import QApplication
+
+            app = QApplication.instance()
+            if app is not None:
+                # type: ignore[union-attr] — ver _system_dark()
+                app.styleHints().colorSchemeChanged.connect(self._on_system_color_scheme)  # type: ignore[union-attr]
+        except Exception:
+            _log.debug("sem sinal colorSchemeChanged; tema fixo no valor inicial", exc_info=True)
 
     # ------------------------------------------------------------ properties
     @Property(bool, notify=bookChanged)
@@ -87,7 +129,7 @@ class EpubBridge(QObject):
     def dark(self) -> bool:
         return self._dark
 
-    @Property(str, constant=True)
+    @Property(str, notify=darkChanged)
     def emptyHtml(self) -> str:
         return empty_html(self._dark)
 
@@ -188,11 +230,12 @@ class EpubBridge(QObject):
     def resetZoom(self) -> None:
         self._set_zoom(1.0)
 
-    @Slot(bool)
-    def setDark(self, dark: bool) -> None:
-        if dark == self._dark:
+    def _on_system_color_scheme(self) -> None:
+        """O tema do OS mudou: atualiza o estado e re-renderiza o conteúdo."""
+        value = _system_dark()
+        if value == self._dark:
             return
-        self._dark = bool(dark)
+        self._dark = value
         self.darkChanged.emit()
         self._emit_content()
 

@@ -39,7 +39,9 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   **2 colunas** quando a janela é larga o suficiente (CSS multi-column +
   media query, reavaliada a cada redimensionamento);
 - **Zoom** de texto (Aa− / Aa+, faixa 60%–250%);
-- **Tema claro / escuro** (aplicado ao conteúdo e à interface);
+- **Tema claro / escuro seguindo o sistema do OS** (sem alternância manual —
+  aplicado à interface e ao conteúdo, e re-renderizado ao vivo se o tema do
+  sistema mudar com o app aberto);
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `Ctrl+←` / `Ctrl+→` (capítulos),
@@ -102,7 +104,8 @@ pypub livro.epub
 - **Navegar por página**: “Pág. anterior” / “Pág. próxima” ou
   `PageUp` / `PageDown` (a posição exata fica no rodapé: “p. N/M”);
 - **Zoom**: “Aa−” / “Aa+” / “1:1” (reset);
-- **Tema**: ação “Tema escuro” (checkable) alterna claro/escuro;
+- **Tema**: segue o esquema claro/escuro do sistema (ex.: `KColorScheme` no
+  KDE — Breeze/BreezeDark); não há botão de alternância;
 - **Rodar largo**: alargue a janela além de ~980 px para o texto virar
   **2 colunas** (nunca mais que 2).
 
@@ -112,8 +115,8 @@ pypub livro.epub
 ┌──────────────────────────────────────────────────────────────────────┐
 │  QML / Kirigami  (pypub/qml/Main.qml)                                │
 │  K.ApplicationWindow + K.Page                                         │
-│  ├── toolbar: ToolButtons (Abrir, capítulos, páginas, Aa−/Aa+, 1:1,  │
-│  │            Tema escuro)  ← ToolButton/ToolBar do QtQuick.Controls │
+│  ├── toolbar: ToolButtons (Abrir, capítulos, páginas, Aa−/Aa+, 1:1)  │
+│  │            ← ToolButton/ToolBar do QtQuick.Controls               │
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
 │  │   • paginação: pypub_info/nextPage/prevPage via runJavaScript     │
 │  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome> (Ctrl+←/→)       │
@@ -127,7 +130,8 @@ pypub livro.epub
 │  • estado: hasBook, bookTitle, chapterCount, currentIndex, zoom,     │
 │            dark, lastError                                            │
 │  • ações: openFile, closeBook, chooseFile, previous, next, goTo,     │
-│           zoomIn/Out, resetZoom, setDark, contentUrl, shutdown       │
+│           zoomIn/Out, resetZoom, contentUrl, shutdown                │
+│  • tema: dark segue o OS (QStyleHints.colorScheme) + sinal ao vivo   │
 │  • sinais: bookChanged, positionChanged, zoomChanged, darkChanged,   │
 │            errorChanged, contentChanged(url)                         │
 └───────────────▲──────────────────────────────────────────────────────┘
@@ -173,8 +177,16 @@ parser nem o renderer.
   customizado) nessa versão, então imagens/CSS/fontes referenciados no EPUB
   são **inlineados como `data:` URIs** (base64) no HTML. `url(...)` relativos
   dentro de folhas de CSS também são resolvidos e inlineados.
-- **Tema**: o HTML do capítulo é re-renderizado com o CSS de tema claro ou
-  escuro ao alternar o tema; o fundo da view segue a mesma cor.
+- **Tema**: segue o **sistema operacional** — a bridge lê
+  `QApplication.styleHints().colorScheme()` (no KDE, a `KColorScheme` do
+  Plasma; em plataforma `offscreen`, `Unknown` → claro) e se conecta ao sinal
+  `colorSchemeChanged`: se o tema do OS muda com o app aberto, o capítulo é
+  re-renderizado na hora. O fundo da view segue a mesma cor
+  (`bridge.pageBackground`). Não há alternância manual.
+  - NB (PySide6 6.12): as constantes do enum `ColorScheme` **não** são
+    expostas (nem `QStyleHints.ColorScheme` nem flat), então a comparação é
+    `"Dark" in str(scheme)`. E `QStyleHints` não instancia — acessa via
+    `QApplication.styleHints()`.
 - **Paginação**: um pequeno script (`pypub/renderer.py::_PAGE_JS`) é injetado
   no fim do `<body>` de cada capítulo e expõe na janela do documento
   `pypub_info()`, `pypub_nextPage()`, `pypub_prevPage()` e `pypub_goToPage(n)`.
@@ -261,7 +273,8 @@ valida, sem abrir display:
 - Persistência da posição de leitura por livro;
 - Sumário (TOC) / ir para um capítulo específico;
 - Busca no texto, dicionário, notas/anotações;
-- Escolha de fonte/tema avançado (apenas claro/escuro fixos);
+- Escolha de fonte/tema avançado (tema claro/escuro segue o OS, sem
+  override manual);
 - Arrastar-e-soltar / múltiplos livros abertos.
 
 **Ideias de evolução:**

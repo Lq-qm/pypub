@@ -11,8 +11,6 @@ K.ApplicationWindow {
     minimumWidth: 440
     minimumHeight: 380
 
-    property bool dark: false
-
     // estado de paginação (uma "página" = uma viewport de altura do conteúdo)
     property int currentPage: 1
     property int pageCount: 1
@@ -28,13 +26,6 @@ K.ApplicationWindow {
     property real zoom: bridge ? bridge.zoom : 1.0
 
     title: hasBook ? (bookTitle + " — PyPub") : "PyPub"
-
-    function setDarkMode(d) {
-        dark = d
-        Qt.colorScheme = d ? Qt.colorSchemeDark : Qt.colorSchemeLight
-        if (bridge)
-            bridge.setDark(d)
-    }
 
     function _applyPageInfo(res) {
         if (res && res.current) {
@@ -171,13 +162,6 @@ K.ApplicationWindow {
                     text: "1:1"
                     enabled: window.zoom !== 1.0
                     onClicked: bridge ? bridge.resetZoom() : undefined
-                }
-                ToolButton {
-                    text: qsTr("Tema escuro")
-                    icon.name: "preferences-desktop-display-color"
-                    checkable: true
-                    checked: window.dark
-                    onToggled: window.setDarkMode(checked)
                 }
             }
         }
