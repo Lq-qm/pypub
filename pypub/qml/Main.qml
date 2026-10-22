@@ -148,16 +148,9 @@ K.ApplicationWindow {
                     enabled: window.hasBook && window.currentPage < window.pageCount
                     onClicked: window.nextPage()
                 }
-                ToolButton {
-                    text: "Aa−"
-                    enabled: window.zoom > 0.6
-                    onClicked: bridge ? bridge.zoomOut() : undefined
-                }
-                ToolButton {
-                    text: "Aa+"
-                    enabled: window.zoom < 2.5
-                    onClicked: bridge ? bridge.zoomIn() : undefined
-                }
+                // NB: os botões Aa−/Aa+ foram removidos da toolbar a pedido;
+                // a capacidade de zoom segue intacta na bridge (zoomIn,
+                // zoomOut, resetZoom) — o botão "1:1" (reset) permanece.
                 ToolButton {
                     text: "1:1"
                     enabled: window.zoom !== 1.0
