@@ -105,10 +105,17 @@ _PAGE_BG_DARK = "#1f2328"
 # runJavaScript. Funciona com 1 ou 2 colunas (a página é sempre o que cabe
 # na tela, independente do fluxo de colunas).
 #
-# Atalhos de teclado: durante a leitura a view tem o foco de teclado e os
-# ``Shortcut`` do QML (janela) ficam inativos (``enabled: !reader.activeFocus``)
-# — PageUp/PageDown, Ctrl+←/→ (capítulos) e Ctrl+= / Ctrl+- / Ctrl+0 (zoom)
-# são tratados AQUI (keydown do documento).
+# Navegação de página: a leitura é PÁGINA A PÁGINA (uma página = um viewport
+# de altura), e a troca de página acontece por:
+# - **rodo do mouse** (wheel): o gesto é acumulado (com cooldown) e, ao
+#   atingir o limiar, avança/recua uma página — o conteúdo não rola livre;
+# - **setas do teclado** (←/→, sem Ctrl): página anterior/próxima (Ctrl+←/→
+#   reserva para capítulos); PageUp/PageDown continuam funcionando;
+# - **Ctrl+= / Ctrl+- / Ctrl+0**: zoom (canal hash → bridge).
+# Durante a leitura a view tem o foco de teclado e os ``Shortcut`` do QML
+# (janela) ficam inativos (``enabled: !reader.activeFocus``) — os eventos são
+# tratados AQUI (keydown/wheel do documento); sem foco, os Shortcut de janela
+# disparam a mesma API do QML.
 # Ctrl+←/→ (troca de capítulo) atravessa o canal JS→Python: o QWebChannel não
 # funciona neste wheel do PySide6 (o tipo QML não carrega e a propriedade
 # webChannel da view exige QQmlWebChannel, que não tem binding Python), então
@@ -185,6 +192,31 @@ _PAGE_JS = """
       var sp = scrollPage();
       if (sp > state.page) state.page = sp;
     });
+
+    // Roda do mouse = troca de página (rolar livre não existe neste leitor):
+    // o deltaY do gesto é acumulado — normalizado pelo deltaMode (0=px,
+    // 1=linhas, 2=páginas) — e, ao atingir o limiar, avança uma página.
+    // Cooldown de 350 ms separa gestos (um giro rápido da roda = várias
+    // páginas; um toque de trackpad = uma). Sempre preventDefault: o
+    // conteúdo NÃO rola livre, ele muda de página.
+    var wheelAcc = 0;
+    var wheelLast = 0;
+    var WHEEL_UNIT = 60;  // unidades acumuladas por página (ver normalização)
+    window.addEventListener("wheel", function (e) {
+      if (!e) return;
+      var d = e.deltaY || 0;
+      if (d !== 0) {
+        var now = Date.now();
+        if (now - wheelLast > 350) wheelAcc = 0;   // gesto novo
+        var unit = (e.deltaMode === 1) ? 10 : (e.deltaMode === 2) ? 100 : 1;
+        wheelAcc += d * unit;
+        wheelLast = now;
+        if (wheelAcc >= WHEEL_UNIT) { wheelAcc = 0; go(state.page + 1); }
+        else if (wheelAcc <= -WHEEL_UNIT) { wheelAcc = 0; go(state.page - 1); }
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    }, true);
   }
 
   // atalhos dentro da página (disparam com a view focada — o estado normal
@@ -202,6 +234,18 @@ _PAGE_JS = """
         prevPage();
         e.preventDefault(); e.stopPropagation();
         return;
+      }
+      // Setas simples (sem Ctrl): → próxima página, ← anterior. (Ctrl+seta
+      // é capítulo — ver abaixo.) Se há seleção de texto ativa, as setas
+      // estendem a seleção e não navegam.
+      if (!e.ctrlKey && !e.metaKey && (k === "ArrowRight" || k === "ArrowLeft")) {
+        var sel = window.getSelection ? window.getSelection() : null;
+        var selActive = !!(sel && sel.rangeCount > 0 && !sel.isCollapsed);
+        if (!selActive) {
+          go(k === "ArrowRight" ? state.page + 1 : state.page - 1);
+          e.preventDefault(); e.stopPropagation();
+          return;
+        }
       }
       if (e.ctrlKey || e.metaKey) {
         if (k === "ArrowRight") {

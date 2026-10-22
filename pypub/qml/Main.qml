@@ -123,15 +123,22 @@ K.ApplicationWindow {
     pageStack.initialPage: K.Page {
         id: mainPage
 
-        // Botões de navegação.
+        // Sumário (barra lateral): lista de capítulos, clique abre o capítulo.
+        property bool showToc: false
+
+        // Toolbar — por que ToolButton/ToolBar (QtQuick.Controls) e não
+        // K.ActionToolBar + K.Action? Nesta combinação (Kirigami 6.31 do
+        // sistema + Qt do wheel do PySide6), o ToolBarLayout C++ do Kirigami
+        // não reconhece as ações QML: nenhuma delegação é renderizada
+        // (0 botões na árvore), reproduzível até com um K.Action trivial.
+        // O ToolButton puro (mesma lib QtQuick.Controls da view) renderiza
+        // e dispara onClicked normalmente — verificado offscreen.
         //
-        // Por que ToolButton/ToolBar (QtQuick.Controls) e não K.ActionToolBar
-        // + K.Action? Nesta combinação (Kirigami 6.31 do sistema + Qt do wheel
-        // do PySide6), o ToolBarLayout C++ do Kirigami não reconhece as
-        // ações QML: nenhuma delegação é renderizada (0 botões na árvore),
-        // reproduzível até com um K.Action trivial. O ToolButton puro
-        // (mesma lib QtQuick.Controls da view) renderiza e dispara onClicked
-        // normalmente — verificado offscreen.
+        // A navegação por CAPÍTULO saiu dos botões para o sumário (sidebar);
+        // a navegação por PÁGINA saiu dos botões para a roda do mouse +
+        // setas ←/→ (tratadas no <script> da página — ver renderer._PAGE_JS;
+        // os botões de zoom, Aa−/Aa+/"1:1", já haviam saído a pedido — a
+        // capacidade segue na bridge: zoomIn/zoomOut/resetZoom).
         header: ToolBar {
             Row {
                 id: headerRow
@@ -141,51 +148,91 @@ K.ApplicationWindow {
                 spacing: 2
 
                 ToolButton {
+                    objectName: "tocButton"
+                    text: qsTr("Sumário")
+                    icon.name: "view-list"
+                    checkable: true
+                    checked: mainPage.showToc
+                    onClicked: mainPage.showToc = !mainPage.showToc
+                }
+                ToolButton {
                     text: qsTr("Abrir…")
                     icon.name: "document-open"
                     onClicked: bridge ? bridge.chooseFile() : undefined
                 }
-                ToolButton {
-                    text: qsTr("Cap. anterior")
-                    icon.name: "document-go-back"
-                    enabled: window.hasBook && window.currentIndex > 0
-                    onClicked: bridge ? bridge.previous() : undefined
-                }
-                ToolButton {
-                    text: qsTr("Cap. próximo")
-                    icon.name: "document-go-forward"
-                    enabled: window.hasBook && window.currentIndex < window.chapterCount - 1
-                    onClicked: bridge ? bridge.next() : undefined
-                }
-                ToolButton {
-                    text: qsTr("Pág. anterior")
-                    icon.name: "go-previous"
-                    enabled: window.hasBook
-                    onClicked: window.prevPage()
-                }
-                ToolButton {
-                    id: nextButton
-                    text: qsTr("Pág. próxima")
-                    icon.name: "go-next"
-                    enabled: window.hasBook && window.currentPage < window.pageCount
-                    onClicked: window.nextPage()
-                }
-                // NB: os botões de zoom (Aa−, Aa+ e "1:1") foram removidos da
-                // toolbar a pedido; a capacidade de zoom segue intacta na
-                // bridge (zoomIn, zoomOut, resetZoom) — disponível para
-                // futura UI (slider, menu, atalho etc.).
             }
         }
 
-        contentItem: WebEngineView {
-            id: reader
-            objectName: "reader"
-            anchors.fill: parent
-            // A página NUNCA escala fora do enquadramento: o zoom age sobre
-            // a fonte (18px * z) e o enquadramento (1 ou 2 colunas) via
-            // pypub_setZoom (applyZoomToPage, acima) — não sobre a view.
-            zoomFactor: 1.0
-            backgroundColor: bridge ? bridge.pageBackground : "white"
+        contentItem: Row {
+            id: contentRow
+            spacing: 0
+
+            // Sumário (sidebar): lista de capítulos clicável — substitui os
+            // botões "Cap. anterior/próximo". QtQuick.Controls puro (o
+            // Kirigami C++ tem conflito de binários neste ambiente).
+            Rectangle {
+                id: tocPanel
+                objectName: "tocPanel"
+                visible: mainPage.showToc
+                width: visible ? 260 : 0
+                height: contentRow.height
+                color: (typeof Kirigami !== "undefined" ? Kirigami.frameColor
+                      : (Qt.colorScheme === Qt.colorSchemeDark ? "#26292e" : "#efeee8"))
+                clip: true
+
+                Column {
+                    id: tocColumn
+                    anchors.fill: parent
+                    anchors.topMargin: 10
+                    anchors.leftMargin: 6
+                    anchors.rightMargin: 6
+                    spacing: 6
+
+                    Label {
+                        id: tocHeader
+                        width: parent.width
+                        text: qsTr("Sumário")
+                        font.bold: true
+                    }
+
+                    ListView {
+                        id: tocList
+                        width: parent.width
+                        height: Math.max(0, parent.height - tocHeader.height - tocColumn.spacing)
+                        clip: true
+                        model: bridge ? JSON.parse(bridge.chaptersJson) : []
+                        delegate: ItemDelegate {
+                            id: tocDelegate
+                            // objectName estável por índice: o teste localiza
+                            // a linha do capítulo via findChild("tocRow-<i>")
+                            objectName: "tocRow-" + index
+                            width: tocList.width
+                            // NB (Qt 6.12/PySide6): com modelo de array JS, o
+                            // contexto do delegate expõe o item em ``modelData``
+                            // — ``model.title`` não resolve (validado offscreen).
+                            text: (index + 1) + ".  " + (modelData.title || "")
+                            highlighted: (bridge ? bridge.currentIndex : -1) === index
+                            onClicked: { if (bridge) bridge.goTo(index) }
+                        }
+                    }
+                }
+            }
+
+            Item {
+                id: readerHolder
+                width: Math.max(0, contentRow.width - tocPanel.width)
+                height: contentRow.height
+
+                WebEngineView {
+                    id: reader
+                    objectName: "reader"
+                    anchors.fill: parent
+                    // A página NUNCA escala fora do enquadramento: o zoom age
+                    // sobre a fonte (18px * z) e o enquadramento (1 ou 2
+                    // colunas) via pypub_setZoom (applyZoomToPage, acima) —
+                    // não sobre a view.
+                    zoomFactor: 1.0
+                    backgroundColor: bridge ? bridge.pageBackground : "white"
             // O conteúdo é servido por um servidor local (127.0.0.1): loadHtml
             // é instável para HTML grande no Qt 6.12 e a view não expõe load().
             Component.onCompleted: {
@@ -233,6 +280,8 @@ K.ApplicationWindow {
                         function() {})
                 }
             }
+            }
+        }
         }
 
         footer: Frame {
@@ -296,11 +345,14 @@ K.ApplicationWindow {
     // Duas frentes, sem página dupla (os Shortcut ficam inativos enquanto a
     // view tem o foco de teclado — enabled: !reader.activeFocus):
     // - com a view focada (estado normal de leitura), o keydown é tratado no
-    //   <script> da própria página (renderer._PAGE_JS): PageUp/PageDown
-    //   navegam a página; Ctrl+←/→ escrevem #pypub:cmd:<nome> na URL (lido
-    //   pelo onUrlChanged da view, acima);
-    // - com a view sem foco, estes Shortcut de janela disparam.
-    // Ctrl+O abre arquivo (só faz sentido fora da página).
+    //   <script> da própria página (renderer._PAGE_JS): setas ←/→ e
+    //   PageUp/PageDown navegam a página; Ctrl+←/→ escrevem #pypub:cmd:<nome>
+    //   na URL (lido pelo onUrlChanged da view, acima); Ctrl+=/-/0 é zoom;
+    // - com a view sem foco, estes Shortcut de janela disparam a mesma API
+    //   (setas ←/→ = página; Ctrl+←/→ = capítulo).
+    // A troca de página pela RODA do mouse é tratada só no <script> da página
+    // (evento wheel da view → documento). Ctrl+O abre arquivo (só faz
+    // sentido fora da página).
     Shortcut {
         sequences: [StandardKey.Open]
         onActivated: bridge ? bridge.chooseFile() : undefined
@@ -324,5 +376,16 @@ K.ApplicationWindow {
         sequences: [StandardKey.PageDown]
         enabled: !reader.activeFocus && window.hasBook && window.currentPage < window.pageCount
         onActivated: window.nextPage()
+    }
+    // Setas simples (view sem foco): → próxima página, ← anterior
+    Shortcut {
+        sequences: ["Right"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: window.nextPage()
+    }
+    Shortcut {
+        sequences: ["Left"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: window.prevPage()
     }
 }

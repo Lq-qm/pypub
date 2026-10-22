@@ -12,6 +12,7 @@ navega normalmente — sem limite de tamanho.
 
 from __future__ import annotations
 
+import json
 import logging
 
 from PySide6.QtCore import QObject, Property, Signal, Slot
@@ -145,6 +146,25 @@ class EpubBridge(QObject):
     def columnCount(self) -> int:
         """Enquadramento por zoom: <100% → 2 colunas; ≥100% → 1 coluna."""
         return columns_for_zoom(self._zoom)
+
+    @Property(str, notify=bookChanged)
+    def chaptersJson(self) -> str:
+        """Lista de capítulos (``index`` + ``title``) em JSON — sumário (sidebar).
+
+        PySide6 → QML não entrega lista de objetos de forma simples; JSON é o
+        formato mais robusto (o QML faz ``JSON.parse(bridge.chaptersJson)``).
+        """
+        if self._epub is None:
+            return "[]"
+        out: list[dict[str, object]] = []
+        for i, ch in enumerate(self._epub.chapters):
+            fallback = ch.path.rsplit("/", 1)[-1]
+            try:
+                title = chapter_title(self._epub.read(ch.path), fallback=fallback)
+            except KeyError:
+                title = fallback
+            out.append({"index": i, "title": title})
+        return json.dumps(out, ensure_ascii=False)
 
     # ----------------------------------------------------------------- slots
     @Slot(str, result=bool)

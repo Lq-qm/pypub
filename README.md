@@ -5,8 +5,8 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 
 > **Status: protótipo.** Foco em abrir um `.epub`, exibi-lo em **no máximo 2
 > colunas**, adaptar-se ao tamanho da janela e rodar com testes headless.
-> Ainda não tem: persistência de posição, sumário (TOC), busca, dicionário,
-> exportação de notas, etc. (ver [Limitações](#limitações-e-próximos-passos)).
+> Ainda não tem: persistência de posição, busca, dicionário, exportação de
+> notas, etc. (ver [Limitações](#limitações-e-próximos-passos)).
 
 ---
 
@@ -30,11 +30,14 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 
 - **Abrir e ler `.epub`** (EPUB 2/3, ZIP + OCF/OPF) — sem bibliotecas de
   parseamento externas;
-- **Navegação entre capítulos** (anterior / próximo), seguindo o *spine*
-  linear do livro;
-- **Navegação por página** (anterior / próxima) — uma “página” é o que cabe
-  numa viewport de altura; funciona com 1 ou 2 colunas, com indicador
-  “p. N/M” no rodapé;
+- **Sumário (TOC)** — botão “Sumário” na toolbar abre a barra lateral com a
+  lista de capítulos (número + título, capítulo atual destacado); clicar num
+  capítulo vai direto a ele (segue o *spine* linear do livro);
+- **Navegação entre capítulos** — `Ctrl+←` / `Ctrl+→` (anterior/próximo);
+- **Navegação por página** — uma “página” é o que cabe numa viewport de
+  altura; funciona com 1 ou 2 colunas, com indicador “p. N/M” no rodapé.
+  **Roda do mouse** (rodar = trocar de página, não rolagem livre) e **setas**
+  `←` / `→` (anterior/próxima); `PageUp` / `PageDown` também;
 - **Layout responsivo e centralizado**: o bloco de leitura fica
   **centralizado** na janela (não colado ao canto superior esquerdo), mesmo
   em livros cujo CSS define margens no `body`; em janelas estreitas o texto
@@ -52,10 +55,10 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   sistema mudar com o app aberto);
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
-- **Atalhos**: `Ctrl+O` (abrir), `Ctrl+←` / `Ctrl+→` (capítulos),
-  `PageUp` / `PageDown` (páginas), `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom) —
-  funcionam com a view focada (tratados no próprio documento) e sem foco
-  (atalhos de janela);
+- **Atalhos**: `Ctrl+O` (abrir), `←` / `→` (páginas),
+  `Ctrl+←` / `Ctrl+→` (capítulos), `PageUp` / `PageDown` (páginas),
+  `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom) — funcionam com a view focada
+  (tratados no próprio documento) e sem foco (atalhos de janela);
 - **Testes headless** (offscreen) cobrindo parser, ponte Python↔QML,
   renderização e a janela Kirigami real.
 
@@ -108,10 +111,13 @@ pypub livro.epub
 ## Uso
 
 - **Abrir**: botão “Abrir…” na toolbar ou `Ctrl+O`;
-- **Navegar por capítulo**: “Cap. anterior” / “Cap. próximo” ou
-  `Ctrl+←` / `Ctrl+→`;
-- **Navegar por página**: “Pág. anterior” / “Pág. próxima” ou
-  `PageUp` / `PageDown` (a posição exata fica no rodapé: “p. N/M”);
+- **Sumário**: botão “Sumário” na toolbar abre/fecha a barra lateral com a
+  lista de capítulos — clicar num capítulo vai a ele (o capítulo atual fica
+  destacado);
+- **Navegar por capítulo**: `Ctrl+←` / `Ctrl+→` (anterior / próximo);
+- **Navegar por página**: **roda do mouse** (rodar para baixo = próxima,
+  para cima = anterior — não é rolagem livre) ou **setas** `←` / `→`
+  (`PageUp` / `PageDown` também). A posição exata fica no rodapé: “p. N/M”;
 - **Zoom**: `Ctrl+=` / `Ctrl+-` (ou a API `zoomIn`/`zoomOut` da bridge);
   `Ctrl+0` / `resetZoom` volta a 100%. Zoom < 100% abre **2 colunas/páginas**
   e reduz a fonte; zoom ≥ 100% fecha em **1 coluna/página** e amplia a fonte
@@ -126,21 +132,22 @@ pypub livro.epub
 ┌──────────────────────────────────────────────────────────────────────┐
 │  QML / Kirigami  (pypub/qml/Main.qml)                                │
 │  K.ApplicationWindow + K.Page                                         │
-│  ├── toolbar: ToolButtons (Abrir, capítulos, páginas)                │
+│  ├── toolbar: ToolButtons (Abrir, Sumário)                           │
 │  │            ← ToolButton/ToolBar do QtQuick.Controls               │
+│  ├── sumário: barra lateral (ListView de capítulos; clique → goTo)   │
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
 │  │   • paginação: pypub_info/nextPage/prevPage via runJavaScript     │
 │  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome> (Ctrl+←/→, zoom)│
 │  │   • zoom: pypub_setZoom(z) no documento (fonte + enquadramento)   │
-│  ├── paginação: pypub_info/nextPage/prevPage via runJavaScript       │
 │  ├── atalhos: Shortcut de janela (view sem foco) + keydown na página │
+│  │   • roda do mouse + setas ←/→ → pypub_nextPage/prevPage          │
 │  └── rodapé: status (capítulo/erros) + “p. N/M” + % zoom             │
 └───────────────▲──────────────────────────────────────────────────────┘
                 │ context property "bridge"
 ┌───────────────┴──────────────────────────────────────────────────────┐
 │  EpubBridge  (pypub/bridge.py)  — QObject com @Property/@Slot        │
 │  • estado: hasBook, bookTitle, chapterCount, currentIndex, zoom,     │
-│            columnCount, dark, lastError                               │
+│            columnCount, chaptersJson, dark, lastError                │
 │  • ações: openFile, closeBook, chooseFile, previous, next, goTo,     │
 │           zoomIn/Out, resetZoom, contentUrl, shutdown                │
 │  • tema: dark segue o OS (QStyleHints.colorScheme) + sinal ao vivo   │
@@ -231,13 +238,17 @@ parser nem o renderer. **Zoom não recarrega**: o `zoomChanged` do QML aplica
   Uma **página = uma viewport de altura** (`window.innerHeight`), então a
   mecânica é idêntica em 1 ou 2 colunas. O QML chama essas funções via
   `runJavaScript` e atualiza o indicador “p. N/M”. `prevPage` no meio da
-  página volta ao topo; `PageUp`/`PageDown` e os botões da toolbar usam a
-  mesma API. O nº de páginas é reavaliado em redimensionamento e ao mudar o
-  zoom.
+  página volta ao topo; `PageUp`/`PageDown`, as **setas** `←`/`→` e a
+  **roda do mouse** usam a mesma API. A roda **não rola livremente**: o
+  `wheel` é acumulado (≥ 60 unidades ≈ 1 página, com cooldown de 350 ms por
+  gesto), então rolar = trocar de página. As setas só navegam sem seleção de
+  texto ativa (para não brigar com a seleção). O nº de páginas é reavaliado
+  em redimensionamento e ao mudar o zoom.
 - **Atalhos de teclado** — duas frentes complementares, sem página dupla:
   - com a **view focada** (estado normal de leitura), o `keydown` é tratado
-    **no próprio documento** (o `<script>` injetado): `PageUp`/`PageDown`
-    navegam a página; `Ctrl+←`/`Ctrl+→` escrevem a ação no fragmento da URL;
+    **no próprio documento** (o `<script>` injetado): `←`/`→` e
+    `PageUp`/`PageDown` navegam a página; `Ctrl+←`/`Ctrl+→` escrevem a ação
+    no fragmento da URL; `Ctrl+=`/`Ctrl+-`/`Ctrl+0` ajustam o zoom;
   - com a **view sem foco**, os itens `Shortcut` de janela disparam
     (ficam inativos enquanto `reader.activeFocus` — `enabled: !reader.activeFocus`).
 - **Canal JS→Python (teclado na página)** — o `QWebChannel`
@@ -281,13 +292,17 @@ valida, sem abrir display:
    abre um livro com a UI viva e confere o título, o indicador “p. N/M”
    (polling, com **descarte de info de documento antigo** — `src` da
    resposta precisa casar com a URL da view), `nextPage`/`prevPage`,
-   **clique em `ToolButton`** (evento de mouse direto no item, com retry —
-   a entrega de eventos no offscreen é instável), **teclado na página**
-   (`PageDown`/`PageUp` via `keydown` do documento), o **canal JS→Python**
-   (`Ctrl+→` no documento → fragmento de URL → `bridge.next()`, esperando o
-   capítulo novo carregar antes do próximo passo) e o **zoom via teclado**
-   (`Ctrl+=` → `bridge.zoomIn()` → documento com fonte/enquadramento
-   aplicados, sem recarga).
+   **sumário (barra lateral)** (clique no botão “Sumário” abre o painel;
+   clique na linha do capítulo → `bridge.goTo` — com retry, pois a entrega de
+   eventos no offscreen é instável), **setas na página** (`ArrowRight`/
+   `ArrowLeft` via `keydown` do documento), **roda do mouse** (wheel → troca
+   de página, não rolagem livre), o **canal JS→Python** (`Ctrl+→` no documento
+   → fragmento de URL → `bridge.next()`, esperando o capítulo novo carregar
+   antes do próximo passo) e o **zoom via teclado** (`Ctrl+=` →
+   `bridge.zoomIn()` → documento com fonte/enquadramento aplicados, sem
+   recarga). O final da suíte inclui um **settling** antes do teardown: com o
+   renderer ainda ocupado com a última navegação, a destruição dos objetos do
+   WebEngine segfaulta no offscreen.
 
 > O teste gera um EPUB de exemplo em `/tmp/pypub_sample.epub` (via
 > `tools/make_sample_epub.py`) e salva a screenshot em `/tmp/pypub_shot.png`.
@@ -319,7 +334,6 @@ valida, sem abrir display:
 **Fora do escopo do protótipo:**
 
 - Persistência da posição de leitura por livro;
-- Sumário (TOC) / ir para um capítulo específico;
 - Busca no texto, dicionário, notas/anotações;
 - Escolha de fonte/tema avançado (tema claro/escuro segue o OS, sem
   override manual);

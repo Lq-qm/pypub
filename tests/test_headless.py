@@ -4,8 +4,10 @@ Roda com QT_QPA_PLATFORM=offscreen.
 """
 
 import json
+import logging
 import os
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -24,8 +26,11 @@ os.environ["QML2_IMPORT_PATH"] = os.pathsep.join(
     ]
 )
 
-SAMPLE = "/tmp/pypub_sample.epub"
-SCREENSHOT = "/tmp/pypub_shot.png"
+_TMP = tempfile.gettempdir()
+SAMPLE = os.path.join(_TMP, "pypub_sample.epub")
+SCREENSHOT = os.path.join(_TMP, "pypub_shot.png")
+
+_LOG = logging.getLogger("pypub.test")
 
 #: objetos C++ que precisam sobreviver ao fim das funções de teste
 KEEP_ALIVE = []
@@ -63,14 +68,14 @@ def test_parser():
 
     # EPUB inválido
     try:
-        Epub.open("/tmp/nao_existe.epub")
+        Epub.open(os.path.join(_TMP, "nao_existe.epub"))
         raise AssertionError("deveria falhar")
     except EpubError:
         pass
-    with open("/tmp/falso.epub", "wb") as f:
+    with open(os.path.join(_TMP, "falso.epub"), "wb") as f:
         f.write(b"isto nao e um zip")
     try:
-        Epub.open("/tmp/falso.epub")
+        Epub.open(os.path.join(_TMP, "falso.epub"))
         raise AssertionError("deveria falhar")
     except EpubError:
         pass
@@ -174,8 +179,8 @@ def wait_js(win, script, predicate, timeout=25.0, interval=0.1):
         try:
             if predicate(last):
                 return last
-        except Exception:
-            pass
+        except Exception as exc:
+            _LOG.debug("wait_js: predicate falhou para %r: %s", last, exc)
         if time.time() >= deadline:
             return last
         time.sleep(interval)
@@ -183,7 +188,7 @@ def wait_js(win, script, predicate, timeout=25.0, interval=0.1):
 
 def build_qml_view(bridge, app, width=1400, height=900):
     """Cria uma QWebEngineView (QML) ligada ao contentChanged da bridge."""
-    from PySide6.QtQml import QQmlEngine, QQmlComponent
+    from PySide6.QtQml import QQmlComponent, QQmlEngine
 
     src = f"""
 import QtQuick
@@ -395,7 +400,7 @@ def test_bridge_and_render(app):
     assert int(bridge.columnCount) == 1  # type: ignore[call-arg]
 
     # erro ao abrir livro inexistente
-    assert not bridge.openFile("/tmp/nao_existe.epub")
+    assert not bridge.openFile(os.path.join(_TMP, "nao_existe.epub"))
     assert bridge.lastError != ""
 
     # livro real (EPUB 2): capítulo longo via servidor local + paginação
@@ -477,7 +482,8 @@ def test_bridge_and_render(app):
 
 def test_qml(app):
     from PySide6.QtCore import QUrl
-    from PySide6.QtQml import QQmlEngine, QQmlComponent
+    from PySide6.QtQml import QQmlComponent, QQmlEngine
+
     from pypub.bridge import EpubBridge
 
     engine = QQmlEngine(app)
@@ -589,8 +595,9 @@ def test_qml(app):
         time.sleep(0.05)
     assert (win.property("currentPage") or 0) == 1, "prevPage() (UI) não trocou a página"
 
-    # --- ToolButton (regressão: K.ActionToolBar/K.Action não renderizam neste
-    # ambiente — botões plain do QtQuick.Controls são o caminho validado) ---
+    # --- Botões/CLIQUE (regressão: K.ActionToolBar/K.Action não renderizam
+    # neste ambiente — ToolButton plain do QtQuick.Controls é o caminho
+    # validado; o "Sumário" é o botão de navegação que a toolbar mantém) ---
     from PySide6.QtCore import QEvent, QPointF
     from PySide6.QtGui import QMouseEvent
 
@@ -633,27 +640,120 @@ def test_qml(app):
                     return True
         return bool(predicate())
 
-    next_btn = find_button("Pág. próxima")
-    assert next_btn is not None, "ToolButton 'Pág. próxima' não encontrado na toolbar"
-    assert bool(next_btn.property("visible")), "ToolButton deveria ser visível"
-    assert bool(next_btn.property("enabled")), "ToolButton deveria estar habilitado"
-    assert click_and_wait(next_btn, lambda: (win.property("currentPage") or 0) == 2), \
-        "clique no ToolButton não trocou a página"
-    print("OK ToolButton clicável (Pág. próxima: 1 → 2)")
+    # --- Sumário (barra lateral): lista de capítulos, clique abre ---
+    # Substitui os antigos botões "Cap. anterior/próximo": o botão "Sumário"
+    # da toolbar abre o painel e a linha do capítulo executa bridge.goTo(i).
+    toc_btn = find_button("Sumário")
+    assert toc_btn is not None, "ToolButton 'Sumário' não encontrado na toolbar"
+    toc_panel = win.findChild(QQuickItem, "tocPanel")
+    assert toc_panel is not None, "tocPanel não encontrado na UI"
+    assert click_and_wait(toc_btn, lambda: bool(toc_panel.property("visible"))), \
+        "clique em 'Sumário' não abriu a barra lateral"
+    assert float(toc_panel.property("width")) > 200, "barra lateral sem largura"
 
-    # --- Teclado na página (keydown do documento: a view tem o foco na leitura) ---
-    before = json.loads(page_js("JSON.stringify(pypub_info())"))
-    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'PageDown', bubbles: true}))")
-    time.sleep(0.5)
+    i_now = int(bridge.currentIndex)  # type: ignore[call-arg]
+    n_chap = int(bridge.chapterCount)  # type: ignore[call-arg]
+    i_target = i_now + 1 if i_now < n_chap - 1 else i_now - 1
+
+    # NB (Qt 6.12/PySide6): delegates do ListView NÃO têm parent QObject
+    # (só parent visual) — win.findChildren/findChild não os encontram.
+    # Percorre os childItems do contentItem do ListView.
+    def find_toc_row(i):
+        for o in win.findChildren(QQuickItem):
+            if o.metaObject().className() == "QQuickListView":
+                ci = o.property("contentItem")
+                if ci:
+                    for c in ci.childItems():
+                        if str(c.property("objectName") or "") == f"tocRow-{i}":
+                            return c
+        return None
+
+    # os delegates do ListView são criados com um pequeno atraso (lazy)
+    row = None
+    t0 = time.time()
+    while row is None and time.time() - t0 < 15:
+        row = find_toc_row(i_target)
+        app.processEvents()
+        time.sleep(0.05)
+    assert row is not None, f"linha 'tocRow-{i_target}' não encontrada no sumário"
+
+    def chap_is_target():
+        return int(bridge.currentIndex) == i_target  # type: ignore[call-arg]
+
+    assert click_and_wait(row, chap_is_target), \
+        f"clique na linha do capítulo não trocou o capítulo ({i_now} -> {i_target})"
+    # capítulo novo = documento novo: espera o load antes de operar a página
+    assert wait_current_document(), "documento do capítulo novo não carregou na view"
+    t0 = time.time()
+    while (win.property("pageCount") or 1) < 2 and time.time() - t0 < 30:
+        app.processEvents()
+        time.sleep(0.1)
+    assert (win.property("pageCount") or 1) >= 2, "indicador de página não atualizou no capítulo novo"
+    print("OK sumário (barra lateral: capítulo", i_now, "→", i_target, "por clique)")
+
+    # --- Setas na página (keydown do documento: a view tem o foco na leitura) ---
+    # → próxima página, ← anterior (a troca de capítulo segue em Ctrl+seta)
+    def cur_page():
+        return json.loads(page_js("JSON.stringify(pypub_info())"))["current"]
+
+    ab = cur_page()
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight', bubbles: true, cancelable: true}))")
+    time.sleep(0.4)
     app.processEvents()
-    after = json.loads(page_js("JSON.stringify(pypub_info())"))
-    assert after["current"] == before["current"] + 1, f"PageDown não navegou: {before} -> {after}"
-    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'PageUp', bubbles: true}))")
-    time.sleep(0.5)
+    af = cur_page()
+    assert af == ab + 1, f"ArrowRight não navegou: {ab} -> {af}"
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowLeft', bubbles: true, cancelable: true}))")
+    time.sleep(0.4)
     app.processEvents()
-    back = json.loads(page_js("JSON.stringify(pypub_info())"))
-    assert back["current"] == before["current"], f"PageUp não voltou: {after} -> {back}"
-    print("OK teclado na página (PageDown/PageUp:", before["current"], "→", after["current"], "→", back["current"], ")")
+    abk = cur_page()
+    assert abk == ab, f"ArrowLeft não voltou: {af} -> {abk}"
+    print("OK setas (ArrowRight/ArrowLeft:", ab, "→", af, "→", abk, ")")
+
+    # --- Roda do mouse: rolar = troca de página (não rolagem livre) ---
+    # O evento de wheel vai à view e o <script> da página acumula o gesto
+    # (120px/nota ≥ limiar → 1 página; cooldown de 350 ms por gesto).
+    from PySide6.QtCore import QPoint
+    from PySide6.QtGui import QWheelEvent
+
+    def wheel_once(dy):
+        pos = QPointF(float(reader.property("width")) / 2, 60.0)
+        ev = QWheelEvent(pos, pos, QPoint(0, dy), QPoint(0, 0),
+                         Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier,
+                         Qt.ScrollPhase.ScrollUpdate, False)
+        app.sendEvent(reader, ev)
+        app.processEvents()
+        time.sleep(0.1)
+        app.processEvents()
+
+    def wheel_and_wait(predicate, dy, timeout=20.0):
+        # retry (a entrega de eventos sintéticos é instável no offscreen);
+        # se a plataforma não encaminhar o wheel à página, valida o handler
+        # direto no documento (mesma lógica: wheel → página)
+        t0 = time.time()
+        while time.time() - t0 < timeout:
+            wheel_once(dy)
+            deadline = time.time() + 1.5
+            while time.time() < deadline:
+                app.processEvents()
+                time.sleep(0.05)
+                if predicate():
+                    return True
+        page_js(f"window.dispatchEvent(new WheelEvent('wheel', {{deltaY: {dy}, deltaMode: 0, bubbles: true, cancelable: true}}))")
+        deadline = time.time() + 3
+        while time.time() < deadline:
+            app.processEvents()
+            time.sleep(0.05)
+            if predicate():
+                return True
+        return predicate()
+
+    wp = cur_page()
+    assert wheel_and_wait(lambda: cur_page() > wp, +120), \
+        f"roda do mouse (baixo) não avançou a página (p. {wp})"
+    wp2 = cur_page()
+    assert wheel_and_wait(lambda: cur_page() <= wp, -120), \
+        f"roda do mouse (cima) não voltou a página (p. {wp2} -> esperado ≤ {wp})"
+    print("OK roda do mouse (página", wp, "→", wp2, "→", cur_page(), ")")
 
     # --- Canal JS→Python via fragmento de URL (Ctrl+→ no documento) ---
     # O QWebChannel não funciona neste wheel do PySide6 (tipo QML quebrado;
@@ -696,11 +796,27 @@ def test_qml(app):
 
     print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title,
           "| indicador p.", win.property("currentPage"), "/", win.property("pageCount"), ")")
+    # Teardown do WebEngine: se o renderer ainda estiver ocupado com a última
+    # navegação, a destruição dos objetos segfaulta no offscreen (validado:
+    # crash 3/3 sem settling; limpo 3/3 com). Garante que o documento responde
+    # e dá tempo para o compositor assentar antes de desligar.
+    try:
+        page_js("typeof pypub_info==='function' ? JSON.stringify(pypub_info()) : null")
+    except Exception as exc:
+        _LOG.debug("settling: ping do documento falhou: %s", exc)
+    t0 = time.time()
+    while time.time() - t0 < 2.0:
+        app.processEvents()
+        time.sleep(0.1)
     bridge.shutdown()
     # fecha a JANELA antes do fim do processo: o teardown do WebEngine com a
     # view ainda viva segfaulta no offscreen (teardown mínimo com close limpa)
     win.close()
     app.processEvents()
+    # mantém os objetos C++ vivos até o fim do processo (mesmo padrão do
+    # test_bridge_and_render): liberá-los ao retornar da função faz o
+    # teardown do WebEngine colidir com o shutdown do interpretador
+    KEEP_ALIVE.extend([engine, comp, win, bridge])
     return 0
 
 
@@ -718,7 +834,10 @@ def main():
         rc = test_qml(app)
         return rc
     finally:
-        app.processEvents()
+        # NB: sem processEvents aqui — test_qml já esvaziou a fila após
+        # win.close(); chamá-la de novo com o WebEngine em teardown
+        # segfaulta no offscreen (validado: crash em main/finally).
+        pass
 
 
 if __name__ == "__main__":
