@@ -35,9 +35,13 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 - **Navegação por página** (anterior / próxima) — uma “página” é o que cabe
   numa viewport de altura; funciona com 1 ou 2 colunas, com indicador
   “p. N/M” no rodapé;
-- **Layout responsivo**: **1 coluna** em janelas estreitas e, no máximo,
-  **2 colunas** quando a janela é larga o suficiente (CSS multi-column +
-  media query, reavaliada a cada redimensionamento);
+- **Layout responsivo e centralizado**: **1 coluna** em janelas estreitas e,
+  no máximo, **2 colunas** quando a janela é larga o suficiente (CSS
+  multi-column + media query, reavaliada a cada redimensionamento); o bloco
+  de leitura fica **centralizado** na janela (não colado ao canto
+  superior esquerdo), mesmo em livros cujo CSS define margens no `body`;
+  em janelas estreitas o texto ocupa a largura disponível com respiro
+  lateral;
 - **Zoom** de texto (Aa− / Aa+, faixa 60%–250%);
 - **Tema claro / escuro seguindo o sistema do OS** (sem alternância manual —
   aplicado à interface e ao conteúdo, e re-renderizado ao vivo se o tema do
@@ -173,6 +177,16 @@ parser nem o renderer.
   `@media (min-width: 980px)`. Abaixo disso, 1 coluna. O WebEngine reavalia a
   media query automaticamente a cada redimensionamento da janela — por isso a
   view “se adapta” sem recarregar a página.
+- **Centralização**: o bloco de leitura tem `max-width` (44em / 70em em 2
+  colunas) e `margin: 0 auto` — em janelas largas, centralizado; em janelas
+  estreitas, ocupa a largura com padding lateral de 32px.
+  - **Por que os seletores `body, body[class]`?** EPUBs exportados do
+    Calibre colocam classes no `<body>` (ex.: `<body class="calibre">`) e o
+    CSS do próprio livro define `.calibre { margin: 0 5pt; padding: 0 }` —
+    classe (especificidade 0-1-0) vence regra de elemento (`body`: 0-0-1) e
+    a página ficava colada à borda esquerda, esticada até o canto superior
+    esquerdo. O CSS do leitor usa `body[class]` (0-1-1), que vence a classe
+    do livro, para `margin`/`padding`/`max-width`/`columns`/cores.
 - **Recursos locais**: o PySide6 não expõe `QWebEngineUrlReply` (schema
   customizado) nessa versão, então imagens/CSS/fontes referenciados no EPUB
   são **inlineados como `data:` URIs** (base64) no HTML. `url(...)` relativos

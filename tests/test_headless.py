@@ -373,6 +373,22 @@ def test_bridge_and_render(app):
                       lambda v: v is not None and v.get("current") == 1, timeout=40.0)
         assert res and res.get("current") == 1, f"prevPage (livro real) falhou: {res!r}"
 
+        # REGRESSÃO (centralização): o <body> deste livro tem class="calibre"
+        # e o CSS do EPUB define ".calibre { margin: 0 5pt; padding: 0 }" —
+        # classe (0-1-0) VENCE a antiga "body { margin: 0 auto }" (0-0-1) e a
+        # página ficava colada à borda esquerda (left ≈ 6,7px = 5pt). O leitor
+        # usa "body[class]" (0-1-1) para manter a centralização.
+        cent = wait_js(
+            root,
+            "(function(){ var b = document.body.getBoundingClientRect(); "
+            "return JSON.stringify({left: b.left, width: b.width, vw: window.innerWidth}); })()",
+            lambda v: v is not None, timeout=10.0)
+        c = json.loads(cent)
+        right_margin = c["vw"] - c["left"] - c["width"]
+        assert c["left"] > 10, f"página colada à borda esquerda (left={c['left']}px)"
+        assert right_margin > 10, (f"página colada à borda direita "
+                                  f"(margem={right_margin}px)")
+
     # screenshot da view renderizada (via função QML -> grabToImage)
     from PySide6.QtCore import QEventLoop, QTimer
 

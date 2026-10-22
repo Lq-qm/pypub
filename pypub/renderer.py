@@ -17,9 +17,23 @@ import re
 from .epub import Epub
 
 # --------------------------------------------------------------------------- CSS
+# Centralização do bloco de leitura — por que os seletores "body, body[class]"?
+# EPUBs exportados do Calibre (e afins) colocam classes no <body> (ex.: <body
+# class="calibre">) e o CSS do próprio livro define
+# ".calibre { margin: 0 5pt; padding-left: 0; padding-right: 0 }". Classe
+# (especificidade 0-1-0) VENCE regra de elemento (body: 0-0-1) — a antiga
+# "body { margin: 0 auto }" era desconsiderada e a página ia para o canto
+# superior esquerdo, esticada até a borda da janela. "body[class]" (0-1-1)
+# vence a classe do livro e, por vir depois no cascade, garante o layout do
+# leitor para <body> simples e com classe.
 _BASE_CSS = """
 html { -webkit-text-size-adjust: 100%; }
 html, body { margin: 0; padding: 0; }
+body, body[class] {
+    margin: 0 auto;
+    padding: 28px 32px 72px;
+    max-width: 44em;
+}
 body {
     font-family: "Noto Sans", "Segoe UI", "DejaVu Sans", sans-serif;
     font-size: 18px;
@@ -27,9 +41,6 @@ body {
     text-align: justify;
     -webkit-hyphens: auto;
     hyphens: auto;
-    padding: 28px 32px 72px;
-    max-width: 44em;
-    margin: 0 auto;
 }
 h1, h2, h3, h4 { line-height: 1.25; margin: 1.3em 0 0.5em; }
 h1:first-child, h2:first-child { margin-top: 0.2em; }
@@ -43,9 +54,9 @@ blockquote { margin: 0 0 1em; padding-left: 1em; border-left: 3px solid; opacity
 
 _LIGHT = """
 :root { color-scheme: light; }
-body { color: #21252b; background: #fbfaf7; }
+body, body[class] { color: #21252b; background: #fbfaf7; }
 @media (min-width: 980px) {
-    body {
+    body, body[class] {
         columns: 2;
         column-gap: 44px;
         column-rule: 1px solid rgba(0, 0, 0, 0.14);
@@ -56,11 +67,11 @@ body { color: #21252b; background: #fbfaf7; }
 
 _DARK = """
 :root { color-scheme: dark; }
-body { color: #dfe3e8; background: #1f2328; }
+body, body[class] { color: #dfe3e8; background: #1f2328; }
 a { color: #79b8ff; }
 blockquote { border-color: rgba(255, 255, 255, 0.35); }
 @media (min-width: 980px) {
-    body {
+    body, body[class] {
         columns: 2;
         column-gap: 44px;
         column-rule: 1px solid rgba(255, 255, 255, 0.16);
