@@ -43,8 +43,8 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   em janelas estreitas o texto ocupa a largura disponível com respiro
   lateral;
 - **Zoom** de texto (faixa 60%–250%) — capacidade mantida na bridge
-  (`zoomIn`/`zoomOut`/`resetZoom`); os botões Aa−/Aa+ não estão mais na
-  toolbar (restou o “1:1” para reset);
+  (`zoomIn`/`zoomOut`/`resetZoom`); os botões de zoom (Aa−/Aa+/“1:1”) não
+  estão mais na toolbar (capacidade preservada para futura UI);
 - **Tema claro / escuro seguindo o sistema do OS** (sem alternância manual —
   aplicado à interface e ao conteúdo, e re-renderizado ao vivo se o tema do
   sistema mudar com o app aberto);
@@ -110,8 +110,8 @@ pypub livro.epub
 - **Navegar por página**: “Pág. anterior” / “Pág. próxima” ou
   `PageUp` / `PageDown` (a posição exata fica no rodapé: “p. N/M”);
 - **Zoom**: a capacidade segue na bridge (`zoomIn`/`zoomOut`/`resetZoom`);
-  na toolbar resta apenas o “1:1” (reset) — os botões Aa−/Aa+ foram
-  removidos a pedido;
+  todos os botões de zoom (Aa−, Aa+ e “1:1”) foram removidos da toolbar a
+  pedido;
 - **Tema**: segue o esquema claro/escuro do sistema (ex.: `KColorScheme` no
   KDE — Breeze/BreezeDark); não há botão de alternância;
 - **Rodar largo**: alargue a janela além de ~980 px para o texto virar
@@ -123,7 +123,7 @@ pypub livro.epub
 ┌──────────────────────────────────────────────────────────────────────┐
 │  QML / Kirigami  (pypub/qml/Main.qml)                                │
 │  K.ApplicationWindow + K.Page                                         │
-│  ├── toolbar: ToolButtons (Abrir, capítulos, páginas, 1:1)           │
+│  ├── toolbar: ToolButtons (Abrir, capítulos, páginas)                │
 │  │            ← ToolButton/ToolBar do QtQuick.Controls               │
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
 │  │   • paginação: pypub_info/nextPage/prevPage via runJavaScript     │
