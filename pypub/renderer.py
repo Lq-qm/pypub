@@ -78,6 +78,15 @@ _PAGE_BG_DARK = "#1f2328"
 # pypub_nextPage / pypub_prevPage; o QML chama e lê os resultados via
 # runJavaScript. Funciona com 1 ou 2 colunas (a página é sempre o que cabe
 # na tela, independente do fluxo de colunas).
+#
+# Atalhos de teclado: durante a leitura a view tem o foco de teclado e os
+# ``Shortcut`` do QML (janela) ficam inativos (``enabled: !reader.activeFocus``)
+# — PageUp/PageDown e Ctrl+←/→ são tratados AQUI (keydown do documento).
+# Ctrl+←/→ (troca de capítulo) atravessa o canal JS→Python: o QWebChannel não
+# funciona neste wheel do PySide6 (o tipo QML não carrega e a propriedade
+# webChannel da view exige QQmlWebChannel, que não tem binding Python), então
+# usamos o fragmento da URL — ``history.replaceState("#pypub:cmd:<nome>")``
+# dispara o sinal ``urlChanged`` na view, que o QML interpreta e executa.
 _PAGE_JS = """
 (function () {
   "use strict";
@@ -108,19 +117,63 @@ _PAGE_JS = """
     window.scrollTo(0, target * h());
     return { current: target + 1, total: t };
   }
+  function prevPage() {
+    var off = window.scrollY - state.page * h();
+    // no meio da página → volta ao topo; no topo → página anterior
+    return go(off > 5 ? state.page : state.page - 1);
+  }
+  // canal JS→Python via fragmento da URL (ver comentário no topo): o QML
+  // observa urlChanged, lê #pypub:cmd:<nome> e dispara a ação correspondente
+  function cmd(name) {
+    try {
+      history.replaceState(null, "", "#pypub:cmd:" + name);
+    } catch (err) { /* sem history API: sem troca de capítulo via teclado */ }
+  }
+  function nextChapter() { cmd("next"); }
+  function prevChapter() { cmd("prev"); }
+
   if (window.addEventListener) {
     window.addEventListener("scroll", function () {
       var sp = scrollPage();
       if (sp > state.page) state.page = sp;
     });
   }
+
+  // atalhos dentro da página (disparam com a view focada — o estado normal
+  // de leitura); preventDefault/stopPropagation evitam rolagem nativa dupla
+  if (document.addEventListener) {
+    document.addEventListener("keydown", function (e) {
+      if (!e) return;
+      var k = e.key || "";
+      if (k === "PageDown") {
+        go(state.page + 1);
+        e.preventDefault(); e.stopPropagation();
+        return;
+      }
+      if (k === "PageUp") {
+        prevPage();
+        e.preventDefault(); e.stopPropagation();
+        return;
+      }
+      if (e.ctrlKey || e.metaKey) {
+        if (k === "ArrowRight") {
+          nextChapter();
+          e.preventDefault(); e.stopPropagation();
+        } else if (k === "ArrowLeft") {
+          prevChapter();
+          e.preventDefault(); e.stopPropagation();
+        }
+      }
+    }, true);
+  }
+
   window.pypub_info = info;
   window.pypub_goToPage = function (n) { return go(n - 1); };
   window.pypub_nextPage = function () { return go(state.page + 1); };
-  window.pypub_prevPage = function () {
-    var off = window.scrollY - state.page * h();
-    // no meio da página → volta ao topo; no topo → página anterior
-    return go(off > 5 ? state.page : state.page - 1);
+  window.pypub_prevPage = prevPage;
+  // diagnóstico/teste: estado da paginação
+  window.pypub_debug = function () {
+    return { page: state.page + 1, total: total(), scrollY: window.scrollY };
   };
 })();
 """

@@ -3,6 +3,7 @@
 Roda com QT_QPA_PLATFORM=offscreen.
 """
 
+import json
 import os
 import sys
 import time
@@ -260,7 +261,7 @@ def test_bridge_and_render(app):
     assert bridge.hasBook
     assert bridge.chapterCount == 3
     assert bridge.currentIndex == 0
-    assert "Capítulo Um" in bridge.currentChapterTitle
+    assert "Capítulo Um" in str(bridge.currentChapterTitle or "")
     assert bridge.lastError == ""
 
     BODY_JS = "document.body ? document.body.innerHTML : ''"
@@ -323,10 +324,11 @@ def test_bridge_and_render(app):
             lambda h: "Capítulo Três" in (h or ""))
 
     # zoom (a view QML segue bridge.zoom via binding)
+    # NB: o PySide6 tipa o @Property como `Property`; o acesso é dinâmico em runtime.
     bridge.zoomIn()
-    assert abs(bridge.zoom - 1.1) < 1e-6
+    assert abs(float(bridge.zoom) - 1.1) < 1e-6  # type: ignore[call-arg]
     bridge.resetZoom()
-    assert abs(bridge.zoom - 1.0) < 1e-6
+    assert abs(float(bridge.zoom) - 1.0) < 1e-6  # type: ignore[call-arg]
 
     # erro ao abrir livro inexistente
     assert not bridge.openFile("/tmp/nao_existe.epub")
@@ -372,10 +374,13 @@ def test_bridge_and_render(app):
     timer.stop()
     timer.deleteLater()
 
+    from PySide6.QtGui import QImage
+
     grab = root.property("grabbedImage")
     assert grab is not None, "falha ao capturar screenshot"
     _img = grab.image
     img = _img() if callable(_img) else _img
+    assert isinstance(img, QImage)
     assert img is not None and not img.isNull(), "imagem capturada nula"
     assert img.save(SCREENSHOT), "falha ao salvar screenshot"
     print("OK bridge + render (screenshot:", SCREENSHOT, ")")
@@ -406,8 +411,11 @@ def test_qml(app):
         for e in comp.errors():
             print("  -", e)
         return 1
+    from PySide6.QtQuick import QQuickWindow
+
     win = comp.create()
     assert win is not None
+    assert isinstance(win, QQuickWindow)
     win.show()
 
     # abre um livro via bridge com a UI viva
@@ -422,7 +430,125 @@ def test_qml(app):
 
     title = win.property("title") or ""
     assert "EPUB de Exemplo" in str(title), f"título inesperado: {title}"
-    print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title, ")")
+
+    # REGRESSÃO (UI real): o indicador de página ("p. N/M") precisa ser
+    # populado. A view termina "loading" antes do <script> de paginação
+    # executar; o refresh único em onLoadingChanged ficava em 1/1. A correção
+    # é o polling (pageInfoTimer) — se ele quebrar, pageCount não sobe de 1.
+    import glob
+
+    zizek = glob.glob(os.path.join(os.path.dirname(__file__), "*Žižek*.epub"))
+    book = zizek[0] if zizek else SAMPLE
+    if book != SAMPLE:
+        bridge.openFile(book)
+        bridge.goTo(4)  # capítulo longo
+
+    t0 = time.time()
+    while (win.property("pageCount") or 1) < 2 and time.time() - t0 < 30:
+        app.processEvents()
+        time.sleep(0.1)
+    assert (win.property("pageCount") or 1) >= 2, "indicador de página não populado na UI"
+    assert (win.property("currentPage") or 0) == 1, "currentPage deveria começar em 1"
+
+    # caminho das funções da UI (o mesmo usado pelos botões da toolbar)
+    from PySide6.QtCore import QMetaObject, Qt
+
+    QMetaObject.invokeMethod(win, "nextPage", Qt.ConnectionType.DirectConnection)
+    t0 = time.time()
+    while (win.property("currentPage") or 0) != 2 and time.time() - t0 < 10:
+        app.processEvents()
+        time.sleep(0.05)
+    assert (win.property("currentPage") or 0) == 2, "nextPage() (UI) não trocou a página"
+
+    QMetaObject.invokeMethod(win, "prevPage", Qt.ConnectionType.DirectConnection)
+    t0 = time.time()
+    while (win.property("currentPage") or 0) != 1 and time.time() - t0 < 10:
+        app.processEvents()
+        time.sleep(0.05)
+    assert (win.property("currentPage") or 0) == 1, "prevPage() (UI) não trocou a página"
+
+    # --- ToolButton (regressão: K.ActionToolBar/K.Action não renderizam neste
+    # ambiente — botões plain do QtQuick.Controls são o caminho validado) ---
+    from PySide6.QtCore import QEvent, QPointF
+    from PySide6.QtGui import QMouseEvent
+
+    def find_button(text):
+        for o in win.findChildren(QQuickItem):
+            if o.metaObject().className().startswith("ToolButton") and o.property("text") == text:
+                return o
+        return None
+
+    def click_item(item):
+        x = float(item.property("width")) / 2
+        y = float(item.property("height")) / 2
+        press = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(x, y), QPointF(x, y), QPointF(x, y),
+                            Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
+        release = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(x, y), QPointF(x, y), QPointF(x, y),
+                              Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
+        app.sendEvent(item, press)
+        app.processEvents()
+        app.sendEvent(item, release)
+        app.processEvents()
+
+    next_btn = find_button("Pág. próxima")
+    assert next_btn is not None, "ToolButton 'Pág. próxima' não encontrado na toolbar"
+    assert bool(next_btn.property("visible")), "ToolButton deveria ser visível"
+    assert bool(next_btn.property("enabled")), "ToolButton deveria estar habilitado"
+    click_item(next_btn)
+    t0 = time.time()
+    while (win.property("currentPage") or 0) != 2 and time.time() - t0 < 10:
+        app.processEvents()
+        time.sleep(0.05)
+    assert (win.property("currentPage") or 0) == 2, "clique no ToolButton não trocou a página"
+    print("OK ToolButton clicável (Pág. próxima: 1 → 2)")
+
+    # --- Teclado na página (keydown do documento: a view tem o foco na leitura) ---
+    def page_js(script):
+        # hook dbgScript/dbgResult no Main.qml (runJavaScript a partir do Python
+        # não entrega callback nesta view — QQuickWebEngineView)
+        win.setProperty("dbgResult", None)
+        win.setProperty("dbgScript", script)
+        t0 = time.time()
+        while time.time() - t0 < 10:
+            app.processEvents()
+            time.sleep(0.05)
+            if win.property("dbgResult") is not None:
+                break
+        r = win.property("dbgResult")
+        win.setProperty("dbgScript", "")
+        return r
+
+    before = json.loads(page_js("JSON.stringify(pypub_info())"))
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'PageDown', bubbles: true}))")
+    time.sleep(0.5)
+    app.processEvents()
+    after = json.loads(page_js("JSON.stringify(pypub_info())"))
+    assert after["current"] == before["current"] + 1, f"PageDown não navegou: {before} -> {after}"
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'PageUp', bubbles: true}))")
+    time.sleep(0.5)
+    app.processEvents()
+    back = json.loads(page_js("JSON.stringify(pypub_info())"))
+    assert back["current"] == before["current"], f"PageUp não voltou: {after} -> {back}"
+    print("OK teclado na página (PageDown/PageUp:", before["current"], "→", after["current"], "→", back["current"], ")")
+
+    # --- Canal JS→Python via fragmento de URL (Ctrl+→ no documento) ---
+    # O QWebChannel não funciona neste wheel do PySide6 (tipo QML quebrado;
+    # webChannel exige QQmlWebChannel, sem binding Python). A página escreve
+    # #pypub:cmd:next na URL (history.replaceState) e o onUrlChanged do QML
+    # executa a ação — testando o caminho completo de troca de capítulo.
+    # NB: bridge.currentIndex é um Property dinâmico do PySide6 — cast para int
+    i0 = int(bridge.currentIndex)  # type: ignore[call-arg]
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: 'ArrowRight', ctrlKey: true, bubbles: true}))")
+    t0 = time.time()
+    while int(bridge.currentIndex) == i0 and time.time() - t0 < 20:  # type: ignore[call-arg]
+        app.processEvents()
+        time.sleep(0.1)
+    i1 = int(bridge.currentIndex)  # type: ignore[call-arg]
+    assert i1 == i0 + 1, f"Ctrl+→ não trocou o capítulo ({i0} -> {i1})"
+    print("OK canal JS→Python (Ctrl+→ : capítulo", i0, "→", i1, ")")
+
+    print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title,
+          "| indicador p.", win.property("currentPage"), "/", win.property("pageCount"), ")")
     bridge.shutdown()
     return 0
 

@@ -95,16 +95,8 @@ class EpubBridge(QObject):
     def pageBackground(self) -> str:
         return page_background(self._dark)
 
-    @property
-    def zoom(self) -> float:
-        return self._zoom
-
-    @zoom.setter
-    def zoom(self, value: float) -> None:
-        self._set_zoom(float(value))
-
     @Property(float, notify=zoomChanged)
-    def zoom(self) -> float:  # type: ignore[no-redef]
+    def zoom(self) -> float:
         return self._zoom
 
     # ----------------------------------------------------------------- slots

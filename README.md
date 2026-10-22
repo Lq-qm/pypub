@@ -43,7 +43,8 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `Ctrl+←` / `Ctrl+→` (capítulos),
-  `PageUp` / `PageDown` (páginas);
+  `PageUp` / `PageDown` (páginas) — funcionam com a view focada (tratados
+  no próprio documento) e sem foco (atalhos de janela);
 - **Testes headless** (offscreen) cobrindo parser, ponte Python↔QML,
   renderização e a janela Kirigami real.
 
@@ -96,9 +97,9 @@ pypub livro.epub
 ## Uso
 
 - **Abrir**: botão “Abrir…” na toolbar ou `Ctrl+O`;
-- **Navegar por capítulo**: “Capítulo anterior” / “Capítulo próximo” ou
+- **Navegar por capítulo**: “Cap. anterior” / “Cap. próximo” ou
   `Ctrl+←` / `Ctrl+→`;
-- **Navegar por página**: “Página anterior” / “Próxima página” ou
+- **Navegar por página**: “Pág. anterior” / “Pág. próxima” ou
   `PageUp` / `PageDown` (a posição exata fica no rodapé: “p. N/M”);
 - **Zoom**: “Aa−” / “Aa+” / “1:1” (reset);
 - **Tema**: ação “Tema escuro” (checkable) alterna claro/escuro;
@@ -111,9 +112,13 @@ pypub livro.epub
 ┌──────────────────────────────────────────────────────────────────────┐
 │  QML / Kirigami  (pypub/qml/Main.qml)                                │
 │  K.ApplicationWindow + K.Page                                         │
-│  ├── toolbar: Abrir, capítulos, páginas, Aa−/Aa+, 1:1, Tema escuro   │
+│  ├── toolbar: ToolButtons (Abrir, capítulos, páginas, Aa−/Aa+, 1:1,  │
+│  │            Tema escuro)  ← ToolButton/ToolBar do QtQuick.Controls │
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
+│  │   • paginação: pypub_info/nextPage/prevPage via runJavaScript     │
+│  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome> (Ctrl+←/→)       │
 │  ├── paginação: pypub_info/nextPage/prevPage via runJavaScript       │
+│  ├── atalhos: Shortcut de janela (view sem foco) + keydown na página │
 │  └── rodapé: status (capítulo/erros) + “p. N/M” + % zoom             │
 └───────────────▲──────────────────────────────────────────────────────┘
                 │ context property "bridge"
@@ -179,6 +184,25 @@ parser nem o renderer.
   página volta ao topo; `PageUp`/`PageDown` e os botões da toolbar usam a
   mesma API. O nº de páginas é reavaliado em redimensionamento e ao mudar o
   zoom.
+- **Atalhos de teclado** — duas frentes complementares, sem página dupla:
+  - com a **view focada** (estado normal de leitura), o `keydown` é tratado
+    **no próprio documento** (o `<script>` injetado): `PageUp`/`PageDown`
+    navegam a página; `Ctrl+←`/`Ctrl+→` escrevem a ação no fragmento da URL;
+  - com a **view sem foco**, os itens `Shortcut` de janela disparam
+    (ficam inativos enquanto `reader.activeFocus` — `enabled: !reader.activeFocus`).
+- **Canal JS→Python (troca de capítulo pelo teclado)** — o `QWebChannel`
+  não funciona neste wheel do PySide6 (o tipo QML não carrega, e a
+  propriedade `webChannel` da view exige `QQmlWebChannel`, que não tem
+  binding Python). O canal usado é o **fragmento da URL**: a página chama
+  `history.replaceState(null, "", "#pypub:cmd:<nome>")` (sem entrada no
+  histórico) e o `onUrlChanged` do QML lê o fragmento, executa a ação
+  (`bridge.next()`/`bridge.previous()`) e limpa o fragmento.
+- **Quando o indicador é preenchido**: a view termina o estado `loading`
+  **antes** do `<script>` de paginação executar (`document.readyState` ainda
+  `loading`), então um refresh único em `onLoadingChanged` ficaria em “p. 1/1”.
+  O QML faz **polling** (`pageInfoTimer`, a cada 300 ms, teto ~7,5 s) até o
+  documento responder com `pypub_info()`; o mesmo polling é disparado no
+  `onContentChanged` como cobertura extra.
 
 ## Testes
 
@@ -198,8 +222,12 @@ valida, sem abrir display:
    (next/previous/goTo), ajusta zoom, trata erro de arquivo inexistente,
    valida **livro real EPUB 2** (capítulo longo servido via HTTP local +
    paginação), captura screenshot e valida o estado vazio após fechar;
-3. **QML Kirigami** — carrega o `Main.qml` real, cria a janela, abre um livro
-   com a UI viva e confere o título.
+3. **QML Kirigami (UI real)** — carrega o `Main.qml` real, cria a janela,
+   abre um livro com a UI viva e confere o título, o indicador “p. N/M”
+   (polling), `nextPage`/`prevPage`, **clique em `ToolButton`** (evento de
+   mouse direto no item), **teclado na página** (`PageDown`/`PageUp` via
+   `keydown` do documento) e o **canal JS→Python** (`Ctrl+→` no documento →
+   fragmento de URL → `bridge.next()`).
 
 > O teste gera um EPUB de exemplo em `/tmp/pypub_sample.epub` (via
 > `tools/make_sample_epub.py`) e salva a screenshot em `/tmp/pypub_shot.png`.
@@ -272,8 +300,34 @@ Decisões tomadas por limitações reais da stack nesta versão:
   o conteúdo é servido por um **servidor HTTP local** (`pypub/server.py`)
   e a view navega para `http://127.0.0.1:<porta>/...` (sem limite de
   tamanho).
-- **`loadFinished` não existe** nesta build — o QML usa `onLoadingChanged`
-  (propriedade `loading`) para detectar o fim do carregamento.
+- **`loadFinished` não existe** nesta build — e a propriedade `loading` vira
+  `false` **antes** do script de paginação rodar; por isso o QML não confia
+  num refresh único: usa um `Timer` de polling até `pypub_info()` responder.
+- **Atalhos por item `Shortcut`**, não por `K.Action { shortcut: … }` — o
+  `shortcut` do Kirigami deriva de uma `QAction` nativa (`fromQAction`) e não
+  dispara em ações puramente QML; itens `Shortcut` no nível da janela
+  (mesmo padrão do `Ctrl+O`) funcionam. Nesta build, `Shortcut` **não tem**
+  a propriedade `when` — a condição vai em `enabled`.
+- **Toolbar com `ToolButton`/`ToolBar` do `QtQuick.Controls`**, e não
+  `K.ActionToolBar`/`K.Action` — o plugin C++ do Kirigami do sistema é
+  linkado contra o Qt do sistema, enquanto o processo PySide6 carrega as
+  libs Qt do wheel; com essa mistura, o `ToolBarLayout` do Kirigami fica com
+  largura zero e **nenhum** botão é renderizado (reproduzível até com uma
+  `K.Action` trivial). O `ToolButton` puro (mesma lib `QtQuick.Controls` da
+  view) renderiza e dispara `onClicked` normalmente — validado offscreen.
+- **`QWebChannel` não funciona neste wheel** — `import QtWebChannel` falha
+  (`QWebChannel is not a type`) mesmo com o plugin presente e `dlopen` OK; e
+  a propriedade `webChannel` da `WebEngineView` espera `QQmlWebChannel`
+  (`Unable to assign QWebChannel to QQmlWebChannel`), classe que o PySide6
+  não expõe. O canal JS→Python usado é o fragmento da URL
+  (`#pypub:cmd:<nome>` + `history.replaceState` + sinal `urlChanged`).
+- **`runJavaScript` a partir do Python não entrega callback** na
+  `QQuickWebEngineView` desta build (`javaScriptResult` nem existe no
+  wrapper); chamadas QML→JS funcionam via `runJavaScript` no QML. O QML expõe
+  hooks `dbgScript`/`dbgResult` no `Main.qml` para os testes inspecionarem a
+  página.
+- **`reader.url` chega como string** no contexto JS do QML (sem método
+  `fragment()`); o fragmento é extraído por `String(reader.url)` + `indexOf("#")`.
 - **`objectName: "reader"`** — `id:` não define `objectName`; o teste localiza
   a view via `findChild(QQuickItem, "reader")`.
 - **`data:` URIs em vez de schema customizado** — `QWebEngineUrlReply` não

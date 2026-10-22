@@ -34,8 +34,8 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(content)
 
-    def log_message(self, *args: object) -> None:  # silêncio
-        pass
+    def log_message(self, format: str, *args: object) -> None:  # silêncio
+        del format, args
 
 
 class _HTTPD(ThreadingHTTPServer):
