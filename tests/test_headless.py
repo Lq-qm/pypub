@@ -340,6 +340,34 @@ def test_bridge_and_render(app):
                   lambda v: v is not None and v.get("current") == 1)
     assert res and res.get("current") == 1, f"pypub_prevPage() falhou: {res!r}"
 
+    # UMA PÁGINA POR VEZ: o body é o clip (overflow hidden + height 100%), o
+    # documento NÃO transborda o viewport (sem rolagem livre/scrollbar) e a
+    # troca de página desloca body.scrollTop — o viewport do documento fica
+    # parado (window.scrollY = 0). Verificação geométrica: na página 2, o
+    # primeiro bloco do capítulo está ACIMA do visível (foi cortado).
+    assert wait_js(root, "window.getComputedStyle(document.body).overflowY",
+                   lambda v: v in ("hidden",))
+    assert wait_js(root, "document.documentElement.scrollHeight <= window.innerHeight + 2",
+                   lambda v: v is True)
+    wait_js(root, "typeof pypub_nextPage==='function'?pypub_nextPage():null",
+            lambda v: v is not None and v.get("current") == 2)
+    geo = wait_js(
+        root,
+        "JSON.stringify({"
+        "winY: window.scrollY, "
+        "clip: document.body ? document.body.scrollTop : -1, "
+        "first: (function(){var el=document.querySelector('h1,h2,h3,p');"
+        "return el ? el.getBoundingClientRect().top : null;})()"
+        "})",
+        lambda v: v is not None)
+    g = json.loads(geo)
+    assert g["winY"] == 0, f"o documento não deveria rolar (winY={g['winY']})"
+    assert g["clip"] > 0, f"body.scrollTop deveria estar deslocado (clip={g['clip']})"
+    assert g["first"] is None or g["first"] < 0, (
+        f"na página 2 o primeiro bloco deveria estar acima do visível: {g!r}")
+    wait_js(root, "typeof pypub_prevPage==='function'?pypub_prevPage():null",
+            lambda v: v is not None and v.get("current") == 1)
+
     res = wait_js(root, "typeof pypub_goToPage==='function'?pypub_goToPage(3):null",
                   lambda v: v is not None and v.get("current") == 3)
     assert res and res.get("current") == 3, f"pypub_goToPage(3) falhou: {res!r}"

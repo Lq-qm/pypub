@@ -35,9 +35,11 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   lista de capítulos (número + título, capítulo atual destacado); clicar num
   capítulo vai direto a ele (segue o *spine* linear do livro);
 - **Navegação entre capítulos** — `Ctrl+←` / `Ctrl+→` (anterior/próximo);
-- **Navegação por página** — uma “página” é o que cabe numa viewport de
-  altura; o enquadramento é fixo (1 coluna), com indicador “p. N/M” no rodapé.
-  **Roda do mouse** (rodar = trocar de página, não rolagem livre) e **setas**
+- **Leitura uma página por vez** — o conteúdo é **cortado na tela** (sem
+  barra de rolagem, sem rolagem livre, sem seleção além da página visível);
+  uma “página” é o que cabe numa viewport de altura, com indicador “p. N/M”
+  no rodapé e enquadramento fixo (1 coluna). A troca de página é a única
+  rolagem: **rodo do mouse** (rodar = trocar de página) e **setas**
   `←` / `→` (anterior/próxima); `PageUp` / `PageDown` também;
 - **Layout responsivo e centralizado**: o bloco de leitura fica
   **centralizado** na janela (não colado ao canto superior esquerdo), mesmo
@@ -194,6 +196,13 @@ fixo em 1 coluna).
 
 ## Como a renderização funciona
 
+- **Uma página por vez (sem rolagem livre)**: o conteúdo do capítulo **não**
+  é um documento longo e rolável — o `<body>` é o *clip* do conteúdo (altura
+  = viewport, `overflow: hidden`): sem barra de rolagem, sem rolagem por
+  momentum e sem seleção de texto além da página visível. A única “rolagem”
+  é a troca de página (roda do mouse / setas / `PageUp`/`PageDown`), que
+  desloca o scroll box do `body` (`body.scrollTop = n × altura`); o
+  viewport do documento nunca rola (`window.scrollY` permanece 0).
 - **Enquadramento fixo**: o bloco de leitura é sempre **1 coluna** (o
   enquadramento **não** muda com o zoom, nem com a largura da janela). Isso
   é uma regra do CSS base (`max-width` + `margin: 0 auto`), não uma classe
@@ -229,18 +238,21 @@ fixo em 1 coluna).
     expostas (nem `QStyleHints.ColorScheme` nem flat), então a comparação é
     `"Dark" in str(scheme)`. E `QStyleHints` não instancia — acessa via
     `QApplication.styleHints()`.
-- **Paginação**: um pequeno script (`pypub/renderer.py::_PAGE_JS`) é injetado
-  no fim do `<body>` de cada capítulo e expõe na janela do documento
-  `pypub_info()`, `pypub_nextPage()`, `pypub_prevPage()` e `pypub_goToPage(n)`.
-  Uma **página = uma viewport de altura** (`window.innerHeight`). O QML
-  chama essas funções via
-  `runJavaScript` e atualiza o indicador “p. N/M”. `prevPage` no meio da
-  página volta ao topo; `PageUp`/`PageDown`, as **setas** `←`/`→` e a
-  **roda do mouse** usam a mesma API. A roda **não rola livremente**: o
-  `wheel` é acumulado (≥ 60 unidades ≈ 1 página, com cooldown de 350 ms por
-  gesto), então rolar = trocar de página. As setas só navegam sem seleção de
-  texto ativa (para não brigar com a seleção). O nº de páginas é reavaliado
-  em redimensionamento e ao mudar o zoom.
+- **Paginação — uma página por vez**: o `<body>` é o clip do conteúdo
+  (altura = viewport, `overflow: hidden`); uma **página = uma viewport de
+  altura** (`window.innerHeight`) e a troca de página desloca o scroll box do
+  `body` (`body.scrollTop`) — o documento **não** transborda o viewport, não
+  existe rolagem livre (sem scrollbar/momentum) e a seleção fica limitada à
+  página visível. Um pequeno script (`pypub/renderer.py::_PAGE_JS`) é
+  injetado no fim do `<body>` e expõe `pypub_info()`, `pypub_nextPage()`,
+  `pypub_prevPage()` e `pypub_goToPage(n)`; o QML chama via `runJavaScript`
+  e atualiza o indicador “p. N/M”. `prevPage` no meio da página volta ao
+  topo; `PageUp`/`PageDown`, as **setas** `←`/`→` e a **roda do mouse** usam
+  a mesma API. A roda é a “rolagem”: o `wheel` é acumulado (≥ 60 unidades ≈
+  1 página, com cooldown de 350 ms por gesto), então rolar = trocar de
+  página. As setas só navegam sem seleção de texto ativa (para não brigar com
+  a seleção). O nº de páginas é reavaliado em redimensionamento e ao mudar o
+  zoom.
 - **Atalhos de teclado** — duas frentes complementares, sem página dupla:
   - com a **view focada** (estado normal de leitura), o `keydown` é tratado
     **no próprio documento** (o `<script>` injetado): `←`/`→` e

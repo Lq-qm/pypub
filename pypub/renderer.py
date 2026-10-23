@@ -29,7 +29,7 @@ from .epub import Epub
 # vence a classe do livro e, por vir depois no cascade, garante o layout do
 # leitor para <body> simples e com classe.
 _BASE_CSS = """
-html { -webkit-text-size-adjust: 100%; }
+html { -webkit-text-size-adjust: 100%; height: 100%; overflow: hidden; }
 html, body { margin: 0; padding: 0; }
 body, body[class] {
     margin: 0 auto;
@@ -39,6 +39,14 @@ body, body[class] {
        pypub_setZoom() — sem recarregar a página (posição de leitura intacta) */
     font-size: calc(18px * var(--pypub-zoom, 1));
     max-width: 44em;  /* enquadramento fixo (1 coluna) — o zoom muda só a fonte */
+    /* UMA PÁGINA POR VEZ: o body é o clip do conteúdo — tem exatamente a
+       altura do viewport e corta o excedente (sem barra de rolagem, sem
+       rolagem livre, sem seleção além da página visível; o documento não
+       transborda o viewport). A troca de página desloca o scroll box do
+       body (body.scrollTop) — ver pypub_nextPage/prevPage no script. */
+    height: 100%;
+    box-sizing: border-box;
+    overflow: hidden;
 }
 body {
     font-family: "Noto Sans", "Segoe UI", "DejaVu Sans", sans-serif;
@@ -86,7 +94,12 @@ _PAGE_BG_LIGHT = "#fbfaf7"
 _PAGE_BG_DARK = "#1f2328"
 
 # --------------------------------------------------------------------------- JS
-# Mecanismo de paginação: uma “página” é um viewport de altura (innerHeight).
+# Mecanismo de paginação — **uma página por vez**: o body é o clip do
+# conteúdo (height 100% + overflow: hidden no CSS do leitor), então o que se
+# vê é sempre exatamente uma página (uma viewport de altura) — o documento
+# NÃO rola livre (sem scrollbar, sem momentum, sem seleção além do visível).
+# A troca de página desloca o scroll box do body (body.scrollTop = n * H);
+# o viewport do documento permanece parado (window.scrollY sempre 0).
 # Exposto na janela do documento como pypub_info / pypub_goToPage /
 # pypub_nextPage / pypub_prevPage; o QML chama e lê os resultados via
 # runJavaScript. O enquadramento é fixo (1 coluna); a página é sempre o que
@@ -111,20 +124,25 @@ _PAGE_BG_DARK = "#1f2328"
 _PAGE_JS = """
 (function () {
   "use strict";
-  // Página atual (0-based) é um ESTADO, não só lido de scrollY:
-  // dentro de uma mesma avaliação JS, scrollY ainda não reflete o último
-  // scrollTo, então navegação baseada só no scroll ficaria defasada.
-  // Rolagem manual do usuário anda "à frente" do state — aí seguimos o scroll.
+  // Página atual (0-based) é um ESTADO, não só lido do offset do clip:
+  // dentro de uma mesma avaliação JS, o offset ainda não reflete a última
+  // troca, então navegação baseada só no offset ficaria defasada.
+  // (Não existe rolagem manual: o body é o clip — ver CSS do leitor.)
   var state = { page: 0 };
   function h() {
     return window.innerHeight || document.documentElement.clientHeight || 1;
   }
+  // O scroll box é o BODY (clip de uma página por vez), não o viewport do
+  // documento — documentElement.scrollHeight seria só a altura da tela.
   function total() {
-    var sh = document.documentElement.scrollHeight ||
-             (document.body ? document.body.scrollHeight : 0);
+    var b = document.body;
+    var sh = (b && b.scrollHeight) || document.documentElement.scrollHeight || 0;
     return Math.max(1, Math.ceil(sh / h()));
   }
-  function scrollPage() { return Math.max(0, Math.floor(window.scrollY / h())); }
+  function scrollPage() {
+    var b = document.body;
+    return Math.max(0, Math.floor(((b && b.scrollTop) || 0) / h()));
+  }
   function info() {
     var sp = scrollPage();
     if (sp > state.page) state.page = sp;  // rolagem manual anda à frente
@@ -138,11 +156,15 @@ _PAGE_JS = """
     var t = total();
     var target = Math.max(0, Math.min(t - 1, n));
     state.page = target;
-    window.scrollTo(0, target * h());
+    // Desloca o CLIP (scroll box do body): mostra a página (target+1) e
+    // corta o resto — o viewport do documento não rola (window.scrollY=0).
+    var b = document.body;
+    if (b) b.scrollTop = target * h();
     return { current: target + 1, total: t };
   }
   function prevPage() {
-    var off = window.scrollY - state.page * h();
+    var b = document.body;
+    var off = (b ? b.scrollTop : 0) - state.page * h();
     // no meio da página → volta ao topo; no topo → página anterior
     return go(off > 5 ? state.page : state.page - 1);
   }
@@ -174,6 +196,8 @@ _PAGE_JS = """
   }
 
   if (window.addEventListener) {
+    // Guarda de segurança: o usuário NÃO rola livre (body é o clip), mas
+    // qualquer deslocamento do clip que ande "à frente" do state é seguido.
     window.addEventListener("scroll", function () {
       var sp = scrollPage();
       if (sp > state.page) state.page = sp;
@@ -274,7 +298,12 @@ _PAGE_JS = """
   };
   // diagnóstico/teste: estado da paginação
   window.pypub_debug = function () {
-    return { page: state.page + 1, total: total(), scrollY: window.scrollY };
+    return {
+      page: state.page + 1,
+      total: total(),
+      clipTop: document.body ? document.body.scrollTop : 0,
+      docScrollY: window.scrollY
+    };
   };
 })();
 """
