@@ -4,10 +4,10 @@
   (o PySide6 não expõe ``QWebEngineUrlReply``, então não usamos esquema
   customizado — inlinear é mais simples e robusto para o protótipo);
 - CSS de leitura dirigido pelo zoom: a FONTE é controlada pelo zoom
-  (18px em 100%) e o ENQUADRAMENTO por colunas — zoom < 100% → 2 colunas
-  (2 páginas, o enquadramento mínimo), zoom ≥ 100% → 1 coluna (1 página, o
-  máximo). A página nunca escala fora do enquadramento (o zoomFactor da
-  view fica em 1.0): além dos limites de enquadramento, só a fonte muda.
+  (18px em 100%) e o ENQUADRAMENTO é FIXO (sempre 1 coluna). A página nunca
+  escala fora do enquadramento (o zoomFactor da view fica em 1.0): o zoom —
+  tanto para mais quanto para menos — muda SOMENTE o tamanho da fonte, sem
+  alterar o enquadramento.
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ body, body[class] {
        :root (valor inicial, conforme a bridge) e atualizado em runtime por
        pypub_setZoom() — sem recarregar a página (posição de leitura intacta) */
     font-size: calc(18px * var(--pypub-zoom, 1));
-    max-width: 44em;  /* 1 coluna (zoom ≥ 100%) */
+    max-width: 44em;  /* enquadramento fixo (1 coluna) — o zoom muda só a fonte */
 }
 body {
     font-family: "Noto Sans", "Segoe UI", "DejaVu Sans", sans-serif;
@@ -60,15 +60,6 @@ blockquote { margin: 0 0 1em; padding-left: 1em; border-left: 3px solid; opacity
 _LIGHT = """
 :root { color-scheme: light; }
 body, body[class] { color: #21252b; background: #fbfaf7; }
-/* 2 colunas (zoom < 100%): classe pypub-2col trocada em runtime por
-   pypub_setZoom() (ou já presente no <html> se a renderização inicial
-   já estava com zoom < 100%) */
-html.pypub-2col body, html.pypub-2col body[class] {
-    columns: 2;
-    column-gap: 44px;
-    column-rule: 1px solid rgba(0, 0, 0, 0.14);
-    max-width: 70em;
-}
 """
 
 _DARK = """
@@ -76,24 +67,20 @@ _DARK = """
 body, body[class] { color: #dfe3e8; background: #1f2328; }
 a { color: #79b8ff; }
 blockquote { border-color: rgba(255, 255, 255, 0.35); }
-/* 2 colunas (zoom < 100%) — ver _LIGHT */
-html.pypub-2col body, html.pypub-2col body[class] {
-    columns: 2;
-    column-gap: 44px;
-    column-rule: 1px solid rgba(255, 255, 255, 0.16);
-    max-width: 70em;
-}
 """
 
-#: ponto de quebra do enquadramento: zoom abaixo → 2 colunas (2 páginas);
-#: acima/igual → 1 coluna (1 página). A página nunca sai desses dois
-#: enquadramentos — além deles, só o tamanho da fonte muda.
-ZOOM_COLUMN_BREAK = 1.0
-
-
+#: Enquadramento fixo: o leitor sempre exibe **1 coluna**. O zoom muda apenas
+#: o tamanho da fonte (18px × z) — tanto para zoom+ quanto para zoom- — sem
+#: alterar o enquadramento (não há mais troca automática de coluna).
 def columns_for_zoom(zoom: float) -> int:
-    """Enquadramento por zoom: <100% → 2 colunas; ≥100% → 1 coluna."""
-    return 2 if zoom < ZOOM_COLUMN_BREAK else 1
+    """Enquadramento fixo: sempre 1 coluna (o ``zoom`` muda só a fonte).
+
+    Mantido por compatibilidade de API (a bridge expõe ``columnCount``);
+    o argumento é ignorado de propósito — o enquadramento não depende mais do
+    zoom.
+    """
+    del zoom  # intencionalmente não utilizado
+    return 1
 
 _PAGE_BG_LIGHT = "#fbfaf7"
 _PAGE_BG_DARK = "#1f2328"
@@ -102,8 +89,8 @@ _PAGE_BG_DARK = "#1f2328"
 # Mecanismo de paginação: uma “página” é um viewport de altura (innerHeight).
 # Exposto na janela do documento como pypub_info / pypub_goToPage /
 # pypub_nextPage / pypub_prevPage; o QML chama e lê os resultados via
-# runJavaScript. Funciona com 1 ou 2 colunas (a página é sempre o que cabe
-# na tela, independente do fluxo de colunas).
+# runJavaScript. O enquadramento é fixo (1 coluna); a página é sempre o que
+# cabe na tela (uma viewport de altura).
 #
 # Navegação de página: a leitura é PÁGINA A PÁGINA (uma página = um viewport
 # de altura), e a troca de página acontece por:
@@ -172,9 +159,9 @@ _PAGE_JS = """
   function zoomOut() { cmd("zoomout"); }
   function zoomReset() { cmd("zoomreset"); }
 
-  // Zoom: a página NUNCA escala (o zoomFactor da view fica 1.0 — o
-  // enquadramento é preservado); muda só a fonte (18px * z, via
-  // --pypub-zoom) e o enquadramento (z < 1 → 2 colunas; z ≥ 1 → 1 coluna).
+  // Zoom: a página NUNCA escala (o zoomFactor da view fica 1.0); o
+  // enquadramento é FIXO (sempre 1 coluna) e muda SOMENTE o tamanho da fonte
+  // (18px * z, via --pypub-zoom) — tanto para zoom+ quanto para zoom-.
   // Não há recarga: a posição de leitura (página atual) é mantida.
   function setZoom(z) {
     z = Number(z);
@@ -183,7 +170,6 @@ _PAGE_JS = """
     var de = document.documentElement;
     if (!de) return false;
     de.style.setProperty("--pypub-zoom", String(z));
-    de.classList.toggle("pypub-2col", z < 1.0);
     return true;
   }
 
@@ -419,25 +405,6 @@ def inline_local_resources(html: str, chapter_path: str, epub: Epub) -> str:
 
 
 # --------------------------------------------------------------------- injeção
-def _set_html_class(html: str, cls: str) -> str:
-    """Adiciona ``cls`` à tag ``<html>`` (usado para o estado inicial pypub-2col)."""
-    m = re.search(r"<html\b[^>]*>", html, re.IGNORECASE)
-    if not m:
-        return html
-    tag = m.group(0)
-    if re.search(r"\bclass\s*=", tag, re.IGNORECASE):
-        new_tag = re.sub(
-            r"""(class\s*=\s*["'])([^"']*)""",
-            rf"\1\2 {cls}",
-            tag,
-            count=1,
-            flags=re.IGNORECASE,
-        )
-    else:
-        new_tag = tag[: -1] + f' class="{cls}>"'
-    return html[: m.start()] + new_tag + html[m.end() :]
-
-
 def inject_css(html: str, dark: bool = False, zoom: float = 1.0) -> str:
     """Injeta o CSS do leitor no HTML do capítulo (``zoom`` = escala inicial da fonte)."""
     zoom_rule = f":root {{ --pypub-zoom: {zoom:g}; }}"
@@ -470,11 +437,9 @@ def prepare_chapter(
 ) -> str:
     """Prepara o HTML do capítulo: recursos inline + CSS do leitor + paginação.
 
-    ``zoom`` fixa o estado INICIAL de fonte/enquadramento (o ajuste em
-    runtime é feito por ``pypub_setZoom`` no documento, sem recarga).
+    ``zoom`` fixa o estado INICIAL da FONTE (enquadramento fixo em 1 coluna);
+    o ajuste em runtime é feito por ``pypub_setZoom`` no documento, sem recarga.
     """
     html = inline_local_resources(raw_html, chapter_path, epub)
-    if columns_for_zoom(zoom) == 2:
-        html = _set_html_class(html, "pypub-2col")
     html = inject_css(html, dark, zoom)
     return inject_page_js(html)

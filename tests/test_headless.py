@@ -63,7 +63,8 @@ def test_parser():
     html = prepare_chapter(book.read("OEBPS/chapter1.xhtml").decode("utf-8"), "OEBPS/chapter1.xhtml", book, False)
     assert "data:image/png;base64," in html, "imagem não foi inlineada"
     assert "data:text/css;base64," in html, "CSS interno não foi inlineado"
-    assert "columns: 2" in html, "CSS responsivo (2 colunas) ausente"
+    assert "max-width: 44em" in html, "CSS do leitor (enquadramento fixo) ausente"
+    assert "columns: 2" not in html, "2 colunas não deve mais existir (enquadramento fixo)"
     book.close()
 
     # EPUB inválido
@@ -103,7 +104,7 @@ def test_epub2_real_file():
         first = book.chapters[0]
         html = prepare_chapter(book.read(first.path).decode("utf-8", "replace"), first.path, book, False)
         assert "data:image/" in html, "capa não foi inlineada"
-        assert "columns: 2" in html, "CSS responsivo ausente"
+        assert "max-width: 44em" in html, "CSS do leitor (enquadramento fixo) ausente"
 
         # capítulo 2 (página de título) tem texto legível
         ch2 = book.chapters[1]
@@ -220,9 +221,9 @@ Window {{
         id: reader
         objectName: "reader"
         anchors.fill: parent
-        // zoom NÃO escala a view (enquadramento fixo) — a fonte e as colunas
-        // são dirigidas por pypub_setZoom no documento (ver applyZoomToPage
-        // no Main.qml)
+        // zoom NÃO escala a view (enquadramento fixo em 1 coluna) — a fonte
+        // é dirigida por pypub_setZoom no documento (ver applyZoomToPage no
+        // Main.qml)
         zoomFactor: 1.0
         backgroundColor: bridge ? bridge.pageBackground : "white"
         Component.onCompleted: {{
@@ -300,26 +301,27 @@ def test_bridge_and_render(app):
     img_ok = wait_js(root, "var i = document.querySelector('img'); i ? (i.naturalWidth > 0) : false",
                      lambda v: v in (True, "true", "True"))
     assert img_ok in (True, "true", "True"), f"imagem não renderizou: {img_ok!r}"
-    # zoom: 100% padrão → 1 coluna (enquadramento máximo); a view não escala
+    # zoom: 100% padrão → enquadramento fixo (1 coluna); a view não escala
     zi = wait_js(root, "typeof pypub_zoomInfo==='function' ? pypub_zoomInfo() : null",
                  lambda v: v is not None and v.get("zoom") == 1.0)
-    assert zi and zi.get("columns") == 1, f"zoom 100% deveria ter 1 coluna: {zi!r}"
+    assert zi and zi.get("columns") == 1, f"enquadramento fixo deveria ter 1 coluna: {zi!r}"
     assert abs(float(zi.get("fontSize", 0)) - 18.0) < 0.5, f"fonte base 18px: {zi!r}"
 
-    # zoom out (0.9) → 2 colunas (enquadramento mínimo) + fonte diminui
+    # zoom out (0.9) → enquadramento FIXO (1 coluna) + fonte diminui
     zi = wait_js(root, "pypub_setZoom(0.9) ? pypub_zoomInfo() : null",
-                 lambda v: v is not None and v.get("columns") == 2)
+                 lambda v: v is not None and v.get("columns") == 1 and v.get("zoom") == 0.9)
     assert zi.get("zoom") == 0.9, f"zoom não aplicado: {zi!r}"
     assert abs(zi.get("fontSize", 0) - 16.2) < 0.5, f"fonte 16.2px em 90%: {zi!r}"
 
-    # zoom in (1.1) → volta a 1 coluna + fonte cresce
+    # zoom in (1.1) → enquadramento fixo + fonte cresce
     zi = wait_js(root, "pypub_setZoom(1.1) ? pypub_zoomInfo() : null",
                  lambda v: v is not None and v.get("columns") == 1 and v.get("zoom") == 1.1)
     assert abs(zi.get("fontSize", 0) - 19.8) < 0.5, f"fonte 19.8px em 110%: {zi!r}"
 
-    # clamps no JS: abaixo de 60% e acima de 250% o enquadramento não quebra
+    # clamps no JS: abaixo de 60% e acima de 250% o zoom é limitado
+    # (o enquadramento é fixo — sempre 1 coluna — em qualquer faixa)
     zi = wait_js(root, "pypub_setZoom(0.3) ? pypub_zoomInfo() : null", lambda v: v is not None)
-    assert zi.get("zoom") == 0.6 and zi.get("columns") == 2, f"clamp inferior: {zi!r}"
+    assert zi.get("zoom") == 0.6 and zi.get("columns") == 1, f"clamp inferior: {zi!r}"
     zi = wait_js(root, "pypub_setZoom(9) ? pypub_zoomInfo() : null", lambda v: v is not None)
     assert zi.get("zoom") == 2.5 and zi.get("columns") == 1, f"clamp superior: {zi!r}"
     wait_js(root, "pypub_setZoom(1.0)", lambda v: v is True)
@@ -342,9 +344,9 @@ def test_bridge_and_render(app):
                   lambda v: v is not None and v.get("current") == 3)
     assert res and res.get("current") == 3, f"pypub_goToPage(3) falhou: {res!r}"
 
-    # zoom NÃO reseta a posição de leitura (não há recarga: só fonte +
-    # enquadramento mudam) — em 0.8 (2 colunas) o conteúdo encolhe e a
-    # página atual é mantida (ou, no limite, clampada à última)
+    # zoom NÃO reseta a posição de leitura (não há recarga: só a fonte muda;
+    # enquadramento fixo) — em 0.8 o conteúdo encolhe e a página atual é
+    # mantida (ou, no limite, clampada à última)
     wait_js(root, "pypub_setZoom(0.8)", lambda v: v is True)
     res = wait_js(root, "pypub_info()",
                   lambda v: v is not None and (v.get("current") == 3
@@ -386,15 +388,15 @@ def test_bridge_and_render(app):
     wait_js(root, "document.body ? document.body.innerText : ''",
             lambda h: "Capítulo Três" in (h or ""))
 
-    # zoom (bridge): faixa 60%–250% e enquadramento derivado (≥100% → 1
-    # coluna; <100% → 2 colunas). NB: o PySide6 tipa o @Property como
-    # `Property`; o acesso é dinâmico em runtime.
-    bridge.zoomIn()  # 1.1 → 1 coluna
+    # zoom (bridge): faixa 60%–250%; o enquadramento é FIXO (sempre 1 coluna)
+    # e o zoom muda só a fonte. NB: o PySide6 tipa o @Property como `Property`;
+    # o acesso é dinâmico em runtime.
+    bridge.zoomIn()  # 1.1 (enquadramento fixo)
     assert abs(float(bridge.zoom) - 1.1) < 1e-6  # type: ignore[call-arg]
-    assert int(bridge.columnCount) == 1, "zoom ≥ 100% → 1 coluna"  # type: ignore[call-arg]
-    bridge.zoomOut()  # 1.0 → ainda 1 coluna (ponto de quebra)
-    bridge.zoomOut()  # 0.9 → 2 colunas
-    assert int(bridge.columnCount) == 2, "zoom < 100% → 2 colunas"  # type: ignore[call-arg]
+    assert int(bridge.columnCount) == 1, "enquadramento fixo → 1 coluna"  # type: ignore[call-arg]
+    bridge.zoomOut()  # 1.0 (enquadramento fixo)
+    bridge.zoomOut()  # 0.9 (enquadramento fixo)
+    assert int(bridge.columnCount) == 1, "enquadramento fixo → 1 coluna"  # type: ignore[call-arg]
     bridge.resetZoom()
     assert abs(float(bridge.zoom) - 1.0) < 1e-6  # type: ignore[call-arg]
     assert int(bridge.columnCount) == 1  # type: ignore[call-arg]
@@ -778,7 +780,7 @@ def test_qml(app):
     # --- Zoom via teclado (Ctrl+= no documento) → canal hash → bridge ---
     # A página escreve #pypub:cmd:zoomin na URL; o onUrlChanged do QML chama
     # bridge.zoomIn(); o onZoomChanged aplica pypub_setZoom no documento
-    # (fonte + enquadramento, sem recarga).
+    # (só a fonte muda; enquadramento fixo; sem recarga).
     z0 = float(bridge.zoom)  # type: ignore[call-arg]
     page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: '=', ctrlKey: true, bubbles: true}))")
     t0 = time.time()
@@ -789,7 +791,7 @@ def test_qml(app):
     assert z1 > z0, f"Ctrl+= não deu zoom in ({z0} -> {z1})"
     zi = json.loads(page_js("JSON.stringify(pypub_zoomInfo())"))
     assert abs(zi["zoom"] - z1) < 0.01, f"documento ({zi['zoom']}) != bridge ({z1})"
-    assert zi["columns"] == (2 if z1 < 1.0 else 1), f"enquadramento errado: {zi!r}"
+    assert zi["columns"] == 1, f"enquadramento fixo → 1 coluna: {zi!r}"
     bridge.resetZoom()
     app.processEvents()
     print("OK zoom via teclado (Ctrl+= :", z0, "→", z1, "; documento:", zi["zoom"], ")")

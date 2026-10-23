@@ -144,7 +144,7 @@ class EpubBridge(QObject):
 
     @Property(int, notify=zoomChanged)
     def columnCount(self) -> int:
-        """Enquadramento por zoom: <100% → 2 colunas; ≥100% → 1 coluna."""
+        """Enquadramento FIXO: sempre 1 coluna (o zoom muda só a fonte)."""
         return columns_for_zoom(self._zoom)
 
     @Property(str, notify=bookChanged)
@@ -268,9 +268,9 @@ class EpubBridge(QObject):
 
     # ------------------------------------------------------------------ utils
     def _set_zoom(self, value: float) -> None:
-        # A mudança chega ao documento via QML → pypub_setZoom (fonte +
-        # enquadramento) SEM recarregar a página; o estado inicial de uma
-        # renderização nova já sai certo (currentHtml passa o zoom).
+        # A mudança chega ao documento via QML → pypub_setZoom (só a FONTE;
+        # enquadramento fixo em 1 coluna) SEM recarregar a página; o estado
+        # inicial de uma renderização nova já sai certo (currentHtml passa o zoom).
         value = max(_ZOOM_MIN, min(_ZOOM_MAX, round(value, 2)))
         if abs(value - self._zoom) < 1e-9:
             return

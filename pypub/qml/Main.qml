@@ -51,10 +51,10 @@ K.ApplicationWindow {
     }
 
     // Zoom: aplica ao documento JÁ CARREGADO sem recarregar a página
-    // (pypub_setZoom atualiza a fonte e a classe de enquadramento — a
-    // posição de leitura é mantida). A view nunca escala (zoomFactor 1.0);
-    // zoom ≥ 100% → 1 coluna (página única); zoom < 100% → 2 colunas.
-    // Acontecido o re-layout, o nº de páginas pode mudar → reavaliamos.
+    // (pypub_setZoom atualiza SOMENTE a fonte — o enquadramento é fixo em
+    // 1 coluna — e a posição de leitura é mantida). A view nunca escala
+    // (zoomFactor 1.0). Acontecido o re-layout, o nº de páginas pode mudar
+    // → reavaliamos.
     function applyZoomToPage() {
         if (!window.hasBook) return
         var z = Number(window.zoom)
@@ -227,10 +227,9 @@ K.ApplicationWindow {
                     id: reader
                     objectName: "reader"
                     anchors.fill: parent
-                    // A página NUNCA escala fora do enquadramento: o zoom age
-                    // sobre a fonte (18px * z) e o enquadramento (1 ou 2
-                    // colunas) via pypub_setZoom (applyZoomToPage, acima) —
-                    // não sobre a view.
+                    // A página NUNCA escala: o zoom age SOMENTE sobre a fonte
+                    // (18px * z) via pypub_setZoom (applyZoomToPage, acima);
+                    // o enquadramento é fixo (1 coluna) — não sobre a view.
                     zoomFactor: 1.0
                     backgroundColor: bridge ? bridge.pageBackground : "white"
             // O conteúdo é servido por um servidor local (127.0.0.1): loadHtml
