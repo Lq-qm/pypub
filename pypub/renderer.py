@@ -112,6 +112,13 @@ _PAGE_BG_DARK = "#1f2328"
 # - **setas do teclado** (←/→, sem Ctrl): página anterior/próxima (Ctrl+←/→
 #   reserva para capítulos); PageUp/PageDown continuam funcionando;
 # - **Ctrl+= / Ctrl+- / Ctrl+0**: zoom (canal hash → bridge).
+# Cada troca (go()) também AVISA o QML pelo fragmento da URL
+# (#pypub:cmd:page:N → onUrlChanged → refreshPageInfo): assim o contador
+# "p. N/M" do rodapé segue a leitura em tempo real — inclusive nas trocas
+# feitas DENTRO da página (roda/setas com foco), que o QML não veria de
+# outra forma. O número na fragment só existe para a URL MUDAR a cada
+# evento (replaceState idêntico não dispara urlChanged); o valor de
+# referência continua sendo pypub_info().
 # Durante a leitura a view tem o foco de teclado e os ``Shortcut`` do QML
 # (janela) ficam inativos (``enabled: !reader.activeFocus``) — os eventos são
 # tratados AQUI (keydown/wheel do documento); sem foco, os Shortcut de janela
@@ -160,6 +167,13 @@ _PAGE_JS = """
     // corta o resto — o viewport do documento não rola (window.scrollY=0).
     var b = document.body;
     if (b) b.scrollTop = target * h();
+    // Avisa o QML (contador "p. N/M" do rodapé): a troca aconteceu DENTRO
+    // da página (roda/setas com foco) e o QML não veria sem este aviso.
+    // Canal JS→Python = fragmento da URL (mesmo transporte de Ctrl+←/→ —
+    // ver cmd() abaixo); o nº na fragment garante que a URL MUDA a cada
+    // troca (replaceState idêntico não dispara urlChanged). O QML lê o
+    // evento e re-sincroniza com pypub_info().
+    cmd("page:" + (target + 1));
     return { current: target + 1, total: t };
   }
   function prevPage() {

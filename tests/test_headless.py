@@ -739,6 +739,18 @@ def test_qml(app):
     assert abk == ab, f"ArrowLeft não voltou: {af} -> {abk}"
     print("OK setas (ArrowRight/ArrowLeft:", ab, "→", af, "→", abk, ")")
 
+    # O CONTADOR da UI (rodapé "p. N/M") tem que seguir a troca feita DENTRO
+    # da página (setas/roda com foco): o canal é o fragmento da URL
+    # (#pypub:cmd:page:N → onUrlChanged → refreshPageInfo). Sem ele o
+    # indicador ficaria travado em "p. 1/N" (regressão reportada).
+    t0 = time.time()
+    while (win.property("currentPage") or 0) != abk and time.time() - t0 < 15:
+        app.processEvents()
+        time.sleep(0.05)
+    assert (win.property("currentPage") or 0) == abk, (
+        f"contador da UI não seguiu a troca na página "
+        f"(UI p.{win.property('currentPage')} vs documento p.{abk})")
+
     # --- Roda do mouse: rolar = troca de página (não rolagem livre) ---
     # O evento de wheel vai à view e o <script> da página acumula o gesto
     # (120px/nota ≥ limiar → 1 página; cooldown de 350 ms por gesto).
@@ -784,6 +796,16 @@ def test_qml(app):
     assert wheel_and_wait(lambda: cur_page() <= wp, -120), \
         f"roda do mouse (cima) não voltou a página (p. {wp2} -> esperado ≤ {wp})"
     print("OK roda do mouse (página", wp, "→", wp2, "→", cur_page(), ")")
+
+    # o contador segue a roda do mouse também (o gesto principal de troca)
+    wfin = cur_page()
+    t0 = time.time()
+    while (win.property("currentPage") or 0) != wfin and time.time() - t0 < 15:
+        app.processEvents()
+        time.sleep(0.05)
+    assert (win.property("currentPage") or 0) == wfin, (
+        f"contador da UI não seguiu a roda do mouse "
+        f"(UI p.{win.property('currentPage')} vs documento p.{wfin})")
 
     # --- Canal JS→Python via fragmento de URL (Ctrl+→ no documento) ---
     # O QWebChannel não funciona neste wheel do PySide6 (tipo QML quebrado;

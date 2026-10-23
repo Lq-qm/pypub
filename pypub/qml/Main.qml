@@ -248,12 +248,13 @@ K.ApplicationWindow {
                 }
             }
             // Canal JS→Python: com a view focada (estado normal de leitura),
-            // Ctrl+←/→ são tratados pelo <script> da página (renderer._PAGE_JS),
-            // que escreve a ação no fragmento da URL (#pypub:cmd:<nome>) via
-            // history.replaceState — sem entrada no histórico. O QWebChannel não
-            // funciona neste wheel do PySide6 (tipo QML quebrado; webChannel
-            // exige QQmlWebChannel, sem binding Python), então o fragmento é o
-            // nosso transporte: urlChanged dispara aqui e a gente executa.
+            // Ctrl+←/→ e as trocas de página (roda/setas) são tratados pelo
+            // <script> da página (renderer._PAGE_JS), que escreve a ação no
+            // fragmento da URL (#pypub:cmd:<nome>) via history.replaceState —
+            // sem entrada no histórico. O QWebChannel não funciona neste wheel
+            // do PySide6 (tipo QML quebrado; webChannel exige QQmlWebChannel,
+            // sem binding Python), então o fragmento é o nosso transporte:
+            // urlChanged dispara aqui e a gente executa.
             onUrlChanged: {
                 // neste build, reader.url chega como string no contexto JS
                 var u = String(reader.url)
@@ -271,6 +272,14 @@ K.ApplicationWindow {
                         bridge ? bridge.zoomOut() : undefined
                     } else if (action === "zoomreset") {
                         bridge ? bridge.resetZoom() : undefined
+                    } else if (action.indexOf("page") === 0) {
+                        // Troca de página DENTRO da página (roda do mouse /
+                        // setas com foco): a página já andou (go()); aqui o QML
+                        // só sincroniza o contador "p. N/M" do rodapé. O nº na
+                        // fragment ("page:N") só existe para a URL mudar a cada
+                        // evento — o valor de referência é o pypub_info() que
+                        // o refresh lê agora.
+                        window.refreshPageInfo()
                     }
                     // limpa o fragmento (sem deixar no histórico); urlChanged
                     // dispara de novo sem o prefixo → inócuo

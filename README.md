@@ -270,12 +270,17 @@ fixo em 1 coluna).
   `resetZoom()`) e limpa o fragmento. NB: o `replaceState` só funciona no
   **documento atual** da view — no documento antigo (navegação em curso) a
   URL da view já é a nova e o `urlChanged` não dispara.
-- **Quando o indicador é preenchido**: a view termina o estado `loading`
-  **antes** do `<script>` de paginação executar (`document.readyState` ainda
-  `loading`), então um refresh único em `onLoadingChanged` ficaria em “p. 1/1”.
-  O QML faz **polling** (`pageInfoTimer`, a cada 300 ms, teto ~7,5 s) até o
-  documento responder com `pypub_info()`; o mesmo polling é disparado no
-  `onContentChanged` como cobertura extra.
+- **Quando o indicador é preenchido / atualizado**: a view termina o estado
+  `loading` **antes** do `<script>` de paginação executar (`document.readyState`
+  ainda `loading`), então um refresh único em `onLoadingChanged` ficaria em
+  “p. 1/1”. O QML faz **polling** (`pageInfoTimer`, a cada 300 ms, teto ~7,5 s)
+  até o documento responder com `pypub_info()`; o mesmo polling é disparado no
+  `onContentChanged` como cobertura extra. **Trocas de página ao vivo**: como
+  a roda do mouse e as setas são tratadas **dentro da página** (o QML não vê o
+  evento), cada `go()` avisa o QML pelo fragmento da URL
+  (`#pypub:cmd:page:N` → `onUrlChanged` → `refreshPageInfo()`), e o contador
+  “p. N/M” do rodapé segue a leitura em tempo real; o mesmo acontece em
+  redimensionamento, zoom e troca de capítulo.
 
 ## Testes
 
