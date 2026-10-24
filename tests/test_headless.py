@@ -60,7 +60,7 @@ def test_parser():
     assert "Capítulo Um" in t1, t1
 
     # recursos locais inlineados (imagem + CSS interno do EPUB)
-    html = prepare_chapter(book.read("OEBPS/chapter1.xhtml").decode("utf-8"), "OEBPS/chapter1.xhtml", book, False)
+    html = prepare_chapter(book.read("OEBPS/chapter1.xhtml").decode("utf-8"), "OEBPS/chapter1.xhtml", book, dark=False)
     assert "data:image/png;base64," in html, "imagem não foi inlineada"
     assert "data:text/css;base64," in html, "CSS interno não foi inlineado"
     assert "max-width: 44em" in html, "CSS do leitor (enquadramento fixo) ausente"
@@ -102,7 +102,7 @@ def test_epub2_real_file():
 
         # capa (1º item do spine) com imagem embutida
         first = book.chapters[0]
-        html = prepare_chapter(book.read(first.path).decode("utf-8", "replace"), first.path, book, False)
+        html = prepare_chapter(book.read(first.path).decode("utf-8", "replace"), first.path, book, dark=False)
         assert "data:image/" in html, "capa não foi inlineada"
         assert "max-width: 44em" in html, "CSS do leitor (enquadramento fixo) ausente"
 
@@ -263,6 +263,67 @@ def test_bridge_and_render(app):
     assert not bridge.hasBook
     assert bridge.chapterCount == 0
     assert bridge.emptyHtml != ""
+
+    # --- Temas de leitura (API da bridge) ---
+    # "default" = visual atual (segue o sistema); "beige" (Mulish) e
+    # "gray" (Bitstream Charter) = paletas fixas com fontes próprias.
+    from pypub import renderer as _renderer
+
+    # NB: as propriedades PySide6 vêm tipadas como `Property` — as asserções
+    # leem via str() para o linter (e o runtime) verem str == str.
+    def _state():
+        return {
+            "theme": str(bridge.theme),
+            "ui_bg": str(bridge.uiBackground),
+            "ui_fg": str(bridge.uiForeground),
+            "ui_font": str(bridge.uiFont),
+            "page_bg": str(bridge.pageBackground),
+        }
+
+    st = _state()
+    assert st["theme"] == "default", st["theme"]
+    assert st["ui_bg"] == "" and st["ui_font"] == "", \
+        "tema default não deve forçar cores/fonte de UI (Kirigami decide)"
+
+    assert bridge.setTheme("beige")
+    st = _state()
+    assert st["theme"] == "beige"
+    assert st["page_bg"] == "#332e26", st["page_bg"]
+    assert st["ui_bg"] == "#2a2620" and st["ui_fg"] == "#e9dfc8"
+    assert st["ui_font"] == "Mulish"
+    assert "Mulish" in str(bridge.emptyHtml), "emptyHtml sem a fonte do tema"
+
+    assert bridge.setTheme("gray")
+    st = _state()
+    assert st["theme"] == "gray"
+    assert st["page_bg"] == "#2f3338"
+    assert st["ui_font"] == "Bitstream Charter"
+
+    # tema inválido → rejeitado (estado intacto); idêntico → no-op ok
+    assert not bridge.setTheme("inexistente")
+    assert _state()["theme"] == "gray"
+    assert bridge.setTheme("gray")
+
+    # renderer: prepare_chapter com tema (paleta + fonte no CSS do capítulo)
+    from pypub.epub import Epub as _Epub
+
+    b = _Epub.open(SAMPLE)
+    try:
+        raw = b.read("OEBPS/chapter1.xhtml").decode("utf-8")
+        path = "OEBPS/chapter1.xhtml"
+        html_beige = _renderer.prepare_chapter(raw, path, b, theme="beige")
+        assert '"Mulish"' in html_beige and "#332e26" in html_beige
+        html_gray = _renderer.prepare_chapter(raw, path, b, theme="gray")
+        assert '"Bitstream Charter"' in html_gray and "#2f3338" in html_gray
+        html_def = _renderer.prepare_chapter(raw, path, b, dark=False)
+        assert '"Noto Sans"' in html_def and "#fbfaf7" in html_def
+    finally:
+        b.close()
+
+    # volta ao padrão (os testes seguintes assumem o visual atual)
+    assert bridge.setTheme("default")
+    st = _state()
+    assert st["theme"] == "default" and st["ui_bg"] == ""
 
     # tema segue o sistema (sem alternância manual): offscreen → Unknown → claro
     assert isinstance(bridge.dark, bool)
@@ -845,6 +906,85 @@ def test_qml(app):
     bridge.resetZoom()
     app.processEvents()
     print("OK zoom via teclado (Ctrl+= :", z0, "→", z1, "; documento:", zi["zoom"], ")")
+
+    # --- Temas de leitura (UI real: botão/menu "Tema" + repintura da aplicação) ---
+    # 3 temas: default (segue o SO; fonte/cores atuais), beige (Mulish), gray
+    # (Bitstream Charter). A escolha repinta a APLICAÇÃO (janela/toolbar/
+    # rodapé/sumário via ui* da bridge) e o CONTEÚDO (paleta + fonte no CSS).
+    theme_btn = find_button("Tema")
+    assert theme_btn is not None, "ToolButton 'Tema' não encontrado na toolbar"
+
+    def find_menu_item(text):
+        for o in win.findChildren(QQuickItem):
+            if o.metaObject().className().startswith("MenuItem") and o.property("text") == text:
+                return o
+        return None
+
+    mi_def = find_menu_item("Padrão (segue o sistema)")
+    mi_beige = find_menu_item("Bege escuro · Mulish")
+    mi_gray = find_menu_item("Cinza escuro · Bitstream Charter")
+    assert mi_def is not None and mi_beige is not None and mi_gray is not None, \
+        "menu de temas incompleto na toolbar"
+    assert bool(mi_def.property("checked")) is True, "tema default deveria estar marcado"
+
+    def set_theme(tid):
+        # mesmo caminho do menu (window.setTheme → bridge.setTheme); o gancho
+        # pendingTheme do Main.qml existe porque QMetaObject.invokeMethod com
+        # argumento não funciona neste PySide6 (sem QArgument/QVariant)
+        win.setProperty("pendingTheme", tid)
+        app.processEvents()
+        t0 = time.time()
+        while str(bridge.theme) != tid and time.time() - t0 < 10:
+            app.processEvents()
+            time.sleep(0.05)
+        assert str(bridge.theme) == tid, f"setTheme({tid}) não aplicou (bridge.theme={bridge.theme!r})"
+        # re-render (novo ?r=) — o DOM novo tem que estar na view antes de
+        # inspecionar o estilo
+        assert wait_current_document(), f"documento re-renderizado ({tid}) não carregou na view"
+        app.processEvents()
+
+    def doc_style():
+        s = page_js(
+            "var c=getComputedStyle(document.body);"
+            "JSON.stringify({ff:c.fontFamily,bg:c.backgroundColor})")
+        return json.loads(s)
+
+    # BEGE: fonte Mulish + fundo bege escuro (documento E UI)
+    set_theme("beige")
+    st = doc_style()
+    assert "Mulish" in (st.get("ff") or ""), f"font-family não virou Mulish: {st!r}"
+    assert st.get("bg") == "rgb(51, 46, 38)", f"fundo bege (#332e26) esperado: {st!r}"
+    assert str(bridge.pageBackground) == "#332e26"
+    assert str(bridge.uiBackground) == "#2a2620" and str(bridge.uiFont) == "Mulish"
+    assert bool(mi_beige.property("checked")) is True and bool(mi_def.property("checked")) is False, \
+        "menu: 'beige' deveria estar marcado (e 'default' desmarcado)"
+    # a fonte instalada resolve de fato no WebEngine (FontFaceSet API)
+    assert page_js("document.fonts && document.fonts.check('16px Mulish')") in (True, "true"), \
+        "fonte Mulish não resolvida no WebEngine (instale com tools/install_theme_fonts.sh)"
+
+    # CINZA: fonte Bitstream Charter + fundo cinza escuro
+    set_theme("gray")
+    st = doc_style()
+    assert "Charter" in (st.get("ff") or ""), f"font-family não virou Charter: {st!r}"
+    assert st.get("bg") == "rgb(47, 51, 56)", f"fundo cinza (#2f3338) esperado: {st!r}"
+    assert str(bridge.uiFont) == "Bitstream Charter"
+    assert bool(mi_gray.property("checked")) is True, "menu: 'gray' deveria estar marcado"
+    assert page_js("document.fonts && document.fonts.check(\"16px 'Bitstream Charter'\")") in (True, "true"), \
+        "fonte Bitstream Charter não resolvida no WebEngine (instale com tools/install_theme_fonts.sh)"
+
+    # volta ao DEFAULT (visual atual; UI de volta ao padrão do Kirigami)
+    # NB: o default preserva a tipografia ATUAL — neste livro (Žižek/Calibre)
+    # a fonte declarada pelo próprio EPUB (Sabon LT Std) vale; em livros sem
+    # fonte própria, Noto Sans (fallback do leitor). A garantia aqui: a fonte
+    # dos temas fixos (Mulish/Charter) saiu.
+    set_theme("default")
+    st = doc_style()
+    ff = st.get("ff") or ""
+    assert "Mulish" not in ff and "Charter" not in ff, \
+        f"font-family de volta ao padrão (tipografia atual): {st!r}"
+    assert str(bridge.uiBackground) == "" and str(bridge.uiFont) == ""
+    assert bool(mi_def.property("checked")) is True, "menu: 'default' deveria estar marcado de novo"
+    print("OK temas (menu 'Tema': default → beige/Mulish → gray/Bitstream Charter → default)")
 
     print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title,
           "| indicador p.", win.property("currentPage"), "/", win.property("pageCount"), ")")

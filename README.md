@@ -51,9 +51,18 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   variável CSS `--pypub-zoom`), tanto para **zoom+** quanto para **zoom-**.
   **Sem recarga** — a posição de leitura é preservada. Controles: `Ctrl+=`
   / `Ctrl+-` / `Ctrl+0` na página e a bridge (`zoomIn`/`zoomOut`/`resetZoom`);
-- **Tema claro / escuro seguindo o sistema do OS** (sem alternância manual —
-  aplicado à interface e ao conteúdo, e re-renderizado ao vivo se o tema do
-  sistema mudar com o app aberto);
+- **Temas de leitura** — menu “Tema” na toolbar, três opções:
+  - **Padrão** — segue o modo claro/escuro do sistema (re-renderiza ao vivo
+    se o tema do OS mudar com o app aberto); a tipografia do próprio livro
+    vale (se ele declarar fonte), senão Noto Sans;
+  - **Bege escuro · Mulish** — paleta bege fixa + fonte **Mulish**
+    (variable font, OFL 1.1);
+  - **Cinza escuro · Bitstream Charter** — paleta cinza fixa + fonte
+    **Bitstream Charter** (Bitstream Inc.).
+
+  O tema afeta a **aplicação inteira** (janela, toolbar, sumário, rodapé)
+  **e o conteúdo** (paleta + fonte via CSS); os temas fixos não mudam com
+  o sistema.
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `←` / `→` (páginas),
@@ -124,8 +133,16 @@ pypub livro.epub
   **1 coluna**): o zoom muda **somente o tamanho da fonte** (até 250%;
   mínimo 60%), tanto para **zoom+** quanto para **zoom-**. A página **nunca
   é escalada** — o enquadramento e a posição de leitura são preservados;
-- **Tema**: segue o esquema claro/escuro do sistema (ex.: `KColorScheme` no
-  KDE — Breeze/BreezeDark); não há botão de alternância.
+- **Tema**: botão “Tema” na toolbar → menu com três opções (checkable):
+  - **Padrão** — segue o modo claro/escuro do sistema (o visual atual);
+  - **Bege escuro · Mulish** — paleta bege fixa + fonte Mulish;
+  - **Cinza escuro · Bitstream Charter** — paleta cinza fixa + fonte
+    Bitstream Charter.
+
+  Os dois temas fixos trazem suas próprias fontes; se não instaladas, o
+  WebEngine usa o fallback da família. Para instalar **Mulish** e
+  **Bitstream Charter** no usuário (sem root, com licenças): `bash
+  tools/install_theme_fonts.sh`.
 
 ## Arquitetura
 
@@ -342,7 +359,8 @@ valida, sem abrir display:
 ├── tests/
 │   └── test_headless.py     # testes offscreen (parser/bridge/render/QML)
 └── tools/
-    └── make_sample_epub.py  # gera um .epub de exemplo para os testes
+    ├── make_sample_epub.py      # gera um .epub de exemplo para os testes
+    └── install_theme_fonts.sh   # instala Mulish + Bitstream Charter (per-user)
 ```
 
 ## Limitações e próximos passos
@@ -351,8 +369,6 @@ valida, sem abrir display:
 
 - Persistência da posição de leitura por livro;
 - Busca no texto, dicionário, notas/anotações;
-- Escolha de fonte/tema avançado (tema claro/escuro segue o OS, sem
-  override manual);
 - Arrastar-e-soltar / múltiplos livros abertos.
 
 **Ideias de evolução:**

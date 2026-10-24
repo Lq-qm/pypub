@@ -25,6 +25,39 @@ K.ApplicationWindow {
     property string lastError: bridge ? bridge.lastError : ""
     property real zoom: bridge ? bridge.zoom : 1.0
 
+    // Tema de leitura: "default" (segue o sistema) | "beige" (Mulish) |
+    // "gray" (Bitstream Charter) — as cores/fonte da APLICAÇÃO inteira vêm da
+    // bridge (uiBackground/uiForeground/uiFont); vazias no default = usar o
+    // padrão do Kirigami (o tema 1 é exatamente o visual atual).
+    property string uiBackground: bridge ? bridge.uiBackground : ""
+    property string uiForeground: bridge ? bridge.uiForeground : ""
+    property string uiFont: bridge ? bridge.uiFont : ""
+
+    // janela: cor de fundo + fonte seguem o tema ativo (default → Kirigami)
+    color: uiBackground.length > 0
+        ? uiBackground
+        : (typeof Kirigami !== "undefined" ? Kirigami.background
+            : (Qt.colorScheme === Qt.colorSchemeDark ? "#1e1f22" : "#f3f1ea"))
+    font.family: uiFont.length > 0 ? uiFont : "Noto Sans"
+
+    // aplica um tema (menu "Tema" da toolbar / testes): a bridge re-renderiza
+    // o conteúdo e repinta a interface (sinal themeChanged)
+    function setTheme(themeId) {
+        bridge ? bridge.setTheme(themeId) : undefined
+    }
+
+    // gancho de teste (mesmo padrão de dbgScript): definir pendingTheme
+    // dispara setTheme() — QMetaObject.invokeMethod com argumento não
+    // funciona neste PySide6 (sem QArgument/QVariant)
+    property string pendingTheme: ""
+    onPendingThemeChanged: {
+        if (pendingTheme !== "") {
+            var t = pendingTheme
+            pendingTheme = ""
+            window.setTheme(t)
+        }
+    }
+
     title: hasBook ? (bookTitle + " — PyPub") : "PyPub"
 
     function _applyPageInfo(res) {
@@ -139,7 +172,16 @@ K.ApplicationWindow {
         // setas ←/→ (tratadas no <script> da página — ver renderer._PAGE_JS;
         // os botões de zoom, Aa−/Aa+/"1:1", já haviam saído a pedido — a
         // capacidade segue na bridge: zoomIn/zoomOut/resetZoom).
+        // O botão "Tema" abre o seletor de temas de leitura (3 opções;
+        // a ativa fica marcada) — ver o Menu abaixo e bridge.setTheme().
         header: ToolBar {
+            // fundo segue o tema (vazio no default → padrão do Kirigami)
+            background: Rectangle {
+                color: window.uiBackground.length > 0
+                    ? window.uiBackground
+                    : (typeof Kirigami !== "undefined" ? Kirigami.frameColor
+                        : (Qt.colorScheme === Qt.colorSchemeDark ? "#26292e" : "#efeee8"))
+            }
             Row {
                 id: headerRow
                 anchors.fill: parent
@@ -154,6 +196,48 @@ K.ApplicationWindow {
                     checkable: true
                     checked: mainPage.showToc
                     onClicked: mainPage.showToc = !mainPage.showToc
+                }
+                ToolButton {
+                    id: themeButton
+                    objectName: "themeButton"
+                    text: qsTr("Tema")
+                    icon.name: "preferences-desktop-color"
+                    // abre o menu de temas abaixo do botão (este build do
+                    // QtQuick.Controls não tem o attached Menu.button — usa
+                    // open() com posição explícita; o botão tem o id
+                    // themeButton para o teste localizar)
+                    onClicked: {
+                        themeMenu.x = 0
+                        themeMenu.y = themeButton.height
+                        themeMenu.open()
+                    }
+                    // Menu de temas de leitura — a escolha repinta a aplicação
+                    // inteira (janela/toolbar/rodapé/sumário via ui*) e o
+                    // conteúdo (paleta + fonte via bridge.setTheme):
+                    //   default — padrão atual: segue o sistema, fonte Noto Sans
+                    //   beige   — bege escuro, fonte Mulish
+                    //   gray    — cinza escuro, fonte Bitstream Charter
+                    Menu {
+                        id: themeMenu
+                        MenuItem {
+                            text: qsTr("Padrão (segue o sistema)")
+                            checkable: true
+                            checked: (bridge ? bridge.theme : "default") === "default"
+                            onTriggered: window.setTheme("default")
+                        }
+                        MenuItem {
+                            text: qsTr("Bege escuro · Mulish")
+                            checkable: true
+                            checked: (bridge ? bridge.theme : "default") === "beige"
+                            onTriggered: window.setTheme("beige")
+                        }
+                        MenuItem {
+                            text: qsTr("Cinza escuro · Bitstream Charter")
+                            checkable: true
+                            checked: (bridge ? bridge.theme : "default") === "gray"
+                            onTriggered: window.setTheme("gray")
+                        }
+                    }
                 }
                 ToolButton {
                     text: qsTr("Abrir…")
@@ -176,8 +260,11 @@ K.ApplicationWindow {
                 visible: mainPage.showToc
                 width: visible ? 260 : 0
                 height: contentRow.height
-                color: (typeof Kirigami !== "undefined" ? Kirigami.frameColor
-                      : (Qt.colorScheme === Qt.colorSchemeDark ? "#26292e" : "#efeee8"))
+                // fundo segue o tema (vazio no default → padrão do Kirigami)
+                color: window.uiBackground.length > 0
+                    ? window.uiBackground
+                    : (typeof Kirigami !== "undefined" ? Kirigami.frameColor
+                        : (Qt.colorScheme === Qt.colorSchemeDark ? "#26292e" : "#efeee8"))
                 clip: true
 
                 Column {
@@ -293,6 +380,13 @@ K.ApplicationWindow {
         }
 
         footer: Frame {
+            // fundo segue o tema (vazio no default → padrão do Kirigami)
+            background: Rectangle {
+                color: window.uiBackground.length > 0
+                    ? window.uiBackground
+                    : (typeof Kirigami !== "undefined" ? Kirigami.frameColor
+                        : (Qt.colorScheme === Qt.colorSchemeDark ? "#26292e" : "#efeee8"))
+            }
             Row {
                 id: statusRow
                 anchors.fill: parent
@@ -313,21 +407,33 @@ K.ApplicationWindow {
                             : qsTr("Abra um arquivo .epub para começar  (Ctrl+O)"))
                     // O singleton ``Kirigami`` nem sempre é registrado; usa-o se
                     // existir, senão cai em cores adaptadas ao esquema claro/escuro.
+                    // Erro tem sempre a cor de erro; senão, a cor de 1º plano do
+                    // tema ativo (vazia no default → textColor do Kirigami).
                     color: window.lastError.length > 0
                         ? (typeof Kirigami !== "undefined" ? Kirigami.errorColor : "#b03030")
-                        : (typeof Kirigami !== "undefined" ? Kirigami.textColor
-                            : (Qt.colorScheme === Qt.colorSchemeDark ? "#e6e6e6" : "#1c1c1c"))
+                        : (window.uiForeground.length > 0
+                            ? window.uiForeground
+                            : (typeof Kirigami !== "undefined" ? Kirigami.textColor
+                                : (Qt.colorScheme === Qt.colorSchemeDark ? "#e6e6e6" : "#1c1c1c")))
                 }
                 Label {
                     id: pageLabel
                     anchors.verticalCenter: parent.verticalCenter
                     visible: window.hasBook
                     text: qsTr("p. %1/%2").arg(window.currentPage).arg(window.pageCount)
+                    color: window.uiForeground.length > 0
+                        ? window.uiForeground
+                        : (typeof Kirigami !== "undefined" ? Kirigami.textColor
+                            : (Qt.colorScheme === Qt.colorSchemeDark ? "#e6e6e6" : "#1c1c1c"))
                 }
                 Label {
                     id: zoomLabel
                     anchors.verticalCenter: parent.verticalCenter
                     text: Math.round(window.zoom * 100) + " %"
+                    color: window.uiForeground.length > 0
+                        ? window.uiForeground
+                        : (typeof Kirigami !== "undefined" ? Kirigami.textColor
+                            : (Qt.colorScheme === Qt.colorSchemeDark ? "#e6e6e6" : "#1c1c1c"))
                 }
             }
         }
