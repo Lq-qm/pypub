@@ -60,9 +60,9 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   - **Cinza escuro · Bitstream Charter** — paleta cinza fixa + fonte
     **Bitstream Charter** (Bitstream Inc.).
 
-  O tema afeta a **aplicação inteira** (janela, toolbar, sumário, rodapé)
-  **e o conteúdo** (paleta + fonte via CSS); os temas fixos não mudam com
-  o sistema.
+  O tema afeta a **aplicação inteira** — janela, toolbar, botões, ícones,
+  menu, sumário, rodapé (texto, fundo, hover) **e o conteúdo** (paleta +
+  fonte via CSS); os temas fixos não mudam com o sistema.
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `←` / `→` (páginas),

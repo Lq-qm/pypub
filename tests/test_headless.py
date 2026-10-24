@@ -949,6 +949,14 @@ def test_qml(app):
             "JSON.stringify({ff:c.fontFamily,bg:c.backgroundColor})")
         return json.loads(s)
 
+    def ui_probe():
+        # snapshot das CORES da interface inteira (janela/botões/menu/sumário/
+        # rodapé) — o PySide6 não expõe as classes Controls tipadas, então o
+        # snapshot é montado no próprio QML (probeUi → uiProbe)
+        QMetaObject.invokeMethod(win, "probeUi", Qt.ConnectionType.DirectConnection)
+        app.processEvents()
+        return json.loads(str(win.property("uiProbe") or "{}"))
+
     # BEGE: fonte Mulish + fundo bege escuro (documento E UI)
     set_theme("beige")
     st = doc_style()
@@ -962,6 +970,18 @@ def test_qml(app):
     assert page_js("document.fonts && document.fonts.check('16px Mulish')") in (True, "true"), \
         "fonte Mulish não resolvida no WebEngine (instale com tools/install_theme_fonts.sh)"
 
+    # INTERFACE INTEIRA segue o tema (janela, botões, menu, sumário, rodapé)
+    up = ui_probe()
+    assert up.get("winBg") == "#2a2620", f"janela não tomou o fundo bege: {up!r}"
+    assert up.get("winFg") == "#e9dfc8", f"1º plano bege ausente: {up!r}"
+    assert up.get("btnText") == "#e9dfc8" and up.get("btnIcon") == "#e9dfc8", \
+        f"botão da toolbar não seguiu o tema: {up!r}"
+    assert up.get("menuBg") == "#2a2620" and up.get("miText") == "#e9dfc8", \
+        f"menu não seguiu o tema: {up!r}"
+    assert up.get("dlgText") == "#e9dfc8", f"sumário não seguiu o tema: {up!r}"
+    assert up.get("lblColor") == "#e9dfc8", f"rodapé não seguiu o tema: {up!r}"
+    assert up.get("winHi") != up.get("winBg"), f"hover deveria diferir do fundo: {up!r}"
+
     # CINZA: fonte Bitstream Charter + fundo cinza escuro
     set_theme("gray")
     st = doc_style()
@@ -971,6 +991,11 @@ def test_qml(app):
     assert bool(mi_gray.property("checked")) is True, "menu: 'gray' deveria estar marcado"
     assert page_js("document.fonts && document.fonts.check(\"16px 'Bitstream Charter'\")") in (True, "true"), \
         "fonte Bitstream Charter não resolvida no WebEngine (instale com tools/install_theme_fonts.sh)"
+    up = ui_probe()
+    assert up.get("winBg") == "#26292d" and up.get("winFg") == "#d8dee4", \
+        f"interface não tomou a paleta cinza: {up!r}"
+    assert up.get("btnText") == "#d8dee4" and up.get("menuBg") == "#26292d" \
+        and up.get("dlgText") == "#d8dee4", f"botões/menu/sumário não seguem o cinza: {up!r}"
 
     # volta ao DEFAULT (visual atual; UI de volta ao padrão do Kirigami)
     # NB: o default preserva a tipografia ATUAL — neste livro (Žižek/Calibre)
@@ -984,7 +1009,14 @@ def test_qml(app):
         f"font-family de volta ao padrão (tipografia atual): {st!r}"
     assert str(bridge.uiBackground) == "" and str(bridge.uiFont) == ""
     assert bool(mi_def.property("checked")) is True, "menu: 'default' deveria estar marcado de novo"
-    print("OK temas (menu 'Tema': default → beige/Mulish → gray/Bitstream Charter → default)")
+    up = ui_probe()
+    assert up.get("winBg") not in ("#2a2620", "#26292d"), \
+        f"default deveria voltar às cores do sistema: {up!r}"
+    assert up.get("btnText") == up.get("winFg") and up.get("menuBg") == up.get("winBg") \
+        and up.get("dlgText") == up.get("winFg"), \
+        f"interface inteira deveria seguir as cores do default: {up!r}"
+    print("OK temas (menu 'Tema': default → beige/Mulish → gray/Bitstream Charter → default)"
+          " | interface inteira (janela/botões/menu/sumário/rodapé) acompanha o tema")
 
     print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title,
           "| indicador p.", win.property("currentPage"), "/", win.property("pageCount"), ")")
