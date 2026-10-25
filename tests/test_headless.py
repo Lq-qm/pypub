@@ -725,6 +725,42 @@ def test_qml(app):
         f"contador da UI não seguiu a roda do mouse "
         f"(UI p.{win.property('currentPage')} vs documento p.{wfin})")
 
+    # --- Roda do mouse UNIFICADA: nas bordas do capítulo, o gesto segue para
+    # o capítulo vizinho (leitor de documento: um único fluxo de navegação) ---
+    # fim do capítulo + roda para baixo → próximo capítulo (página 1);
+    # topo do capítulo + roda para cima → capítulo anterior.
+    chap0 = int(bridge.currentIndex)  # type: ignore[call-arg]
+    n_chap = int(bridge.chapterCount)  # type: ignore[call-arg]
+
+    def chap_idx():
+        return int(bridge.currentIndex)  # type: ignore[call-arg]
+
+    if chap0 < n_chap - 1:
+        ti = json.loads(page_js("JSON.stringify(pypub_info())"))
+        page_js(f"pypub_goToPage({int(ti['total'])})")  # vai à ÚLTIMA página
+        t0 = time.time()
+        while json.loads(page_js("JSON.stringify(pypub_info())"))["current"] != int(ti["total"]) \
+                and time.time() - t0 < 10:
+            app.processEvents()
+            time.sleep(0.05)
+        assert wheel_and_wait(lambda: chap_idx() == chap0 + 1, +120), \
+            f"roda no FIM do capítulo {chap0} não avançou para o capítulo {chap0 + 1}"
+        assert wait_current_document(), "capítulo seguinte não carregou na view"
+        t0 = time.time()
+        while (win.property("currentPage") or 0) != 1 and time.time() - t0 < 20:
+            app.processEvents()
+            time.sleep(0.05)
+        assert (win.property("currentPage") or 0) == 1, \
+            f"capítulo {chap0 + 1} não começou na página 1 (p.{win.property('currentPage')})"
+        # topo + roda para cima → volta ao capítulo anterior
+        assert wheel_and_wait(lambda: chap_idx() == chap0, -120), \
+            f"roda no TOPO do capítulo {chap0 + 1} não voltou ao capítulo {chap0}"
+        assert wait_current_document(), "capítulo anterior não recarregou na view"
+        print("OK roda unificada (fim do cap.", chap0, "→ cap.", chap0 + 1, "p.1; "
+              "topo do cap.", chap0 + 1, "→ cap.", chap0, ")")
+    else:
+        print("OK roda unificada (pulada: o livro está no capítulo final)")
+
     # --- Canal JS→Python via fragmento de URL (Ctrl+→ no documento) ---
     # O QWebChannel não funciona neste wheel do PySide6 (tipo QML quebrado;
     # webChannel exige QQmlWebChannel, sem binding Python). A página escreve

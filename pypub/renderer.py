@@ -217,6 +217,31 @@ _PAGE_JS = """
     // no meio da página → volta ao topo; no topo → página anterior
     return go(off > 5 ? state.page : state.page - 1);
   }
+  // Navegação UNIFICADA (como em leitor de documento): anda UMA etapa —
+  // próxima/anterior página; nas bordas do capítulo, segue para o capítulo
+  // vizinho (canal JS→Python via fragmento da URL; o QML troca o capítulo e
+  // o novo documento começa na página 1 / o anterior na última vista).
+  // delta: +1 (adiante) / −1 (atrás). Cooldown de 800 ms evita que o
+  // mesmo gesto (ou a rolagem contínua no documento antigo, que segue vivo
+  // enquanto o novo carrega) dispare duas trocas de capítulo seguidas.
+  var chapterSentAt = 0;
+  function step(delta) {
+    delta = delta > 0 ? 1 : (delta < 0 ? -1 : 0);
+    if (!delta) return null;
+    var now = Date.now();
+    if (delta > 0) {
+      if (state.page < total() - 1) return go(state.page + 1);
+      if (now - chapterSentAt < 800) return null;
+      chapterSentAt = now;
+      nextChapter();
+      return { cmd: "next" };
+    }
+    if (state.page > 0) return go(state.page - 1);
+    if (now - chapterSentAt < 800) return null;
+    chapterSentAt = now;
+    prevChapter();
+    return { cmd: "prev" };
+  }
   // canal JS→Python via fragmento da URL (ver comentário no topo): o QML
   // observa urlChanged, lê #pypub:cmd:<nome> e dispara a ação correspondente
   function cmd(name) {
@@ -252,15 +277,16 @@ _PAGE_JS = """
       if (sp > state.page) state.page = sp;
     });
 
-    // Roda do mouse = troca de página (rolar livre não existe neste leitor):
-    // o deltaY do gesto é acumulado — normalizado pelo deltaMode (0=px,
-    // 1=linhas, 2=páginas) — e, ao atingir o limiar, avança uma página.
-    // Cooldown de 350 ms separa gestos (um giro rápido da roda = várias
-    // páginas; um toque de trackpad = uma). Sempre preventDefault: o
-    // conteúdo NÃO rola livre, ele muda de página.
+    // Roda do mouse = navegação UNIFICADA (como em leitor de documento):
+    // cada gesto (deltaY acumulado — normalizado pelo deltaMode (0=px, 1=
+    // linhas, 2=páginas) — limiar WHEEL_UNIT; cooldown de 350 ms entre
+    // gestos) anda UMA etapa (step): a próxima/anterior página; no fim do
+    // capítulo, o PRÓXIMO capítulo; no topo, o ANTERIOR. Sempre
+    // preventDefault: o conteúdo NÃO rola livre, ele anda de página em
+    // página (e de capítulo em capítulo nas bordas).
     var wheelAcc = 0;
     var wheelLast = 0;
-    var WHEEL_UNIT = 60;  // unidades acumuladas por página (ver normalização)
+    var WHEEL_UNIT = 60;  // unidades acumuladas por etapa (ver normalização)
     window.addEventListener("wheel", function (e) {
       if (!e) return;
       var d = e.deltaY || 0;
@@ -270,8 +296,8 @@ _PAGE_JS = """
         var unit = (e.deltaMode === 1) ? 10 : (e.deltaMode === 2) ? 100 : 1;
         wheelAcc += d * unit;
         wheelLast = now;
-        if (wheelAcc >= WHEEL_UNIT) { wheelAcc = 0; go(state.page + 1); }
-        else if (wheelAcc <= -WHEEL_UNIT) { wheelAcc = 0; go(state.page - 1); }
+        if (wheelAcc >= WHEEL_UNIT) { wheelAcc = 0; step(1); }
+        else if (wheelAcc <= -WHEEL_UNIT) { wheelAcc = 0; step(-1); }
       }
       e.preventDefault();
       e.stopPropagation();
@@ -284,24 +310,25 @@ _PAGE_JS = """
     document.addEventListener("keydown", function (e) {
       if (!e) return;
       var k = e.key || "";
+      // PageUp/PageDown e setas simples = a mesma etapa unificada da roda
+      // (página, ou capítulo na borda). (Ctrl+seta é salto direto de
+      // capítulo — ver abaixo.) Se há seleção de texto ativa, as setas
+      // estendem a seleção e não navegam.
       if (k === "PageDown") {
-        go(state.page + 1);
+        step(1);
         e.preventDefault(); e.stopPropagation();
         return;
       }
       if (k === "PageUp") {
-        prevPage();
+        step(-1);
         e.preventDefault(); e.stopPropagation();
         return;
       }
-      // Setas simples (sem Ctrl): → próxima página, ← anterior. (Ctrl+seta
-      // é capítulo — ver abaixo.) Se há seleção de texto ativa, as setas
-      // estendem a seleção e não navegam.
       if (!e.ctrlKey && !e.metaKey && (k === "ArrowRight" || k === "ArrowLeft")) {
         var sel = window.getSelection ? window.getSelection() : null;
         var selActive = !!(sel && sel.rangeCount > 0 && !sel.isCollapsed);
         if (!selActive) {
-          go(k === "ArrowRight" ? state.page + 1 : state.page - 1);
+          step(k === "ArrowRight" ? 1 : -1);
           e.preventDefault(); e.stopPropagation();
           return;
         }

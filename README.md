@@ -38,6 +38,11 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   no rodapé e enquadramento fixo (1 coluna). A troca de página é a única
   rolagem: **rodo do mouse** (rodar = trocar de página) e **setas**
   `←` / `→` (anterior/próxima); `PageUp` / `PageDown` também;
+- **Navegação unificada (como em leitor de documento)** — cada gesto da roda
+  anda uma etapa: a próxima/anterior página; **no fim do capítulo, o gesto
+  segue para o próximo capítulo** (que abre na página 1); **no topo, volta
+  ao capítulo anterior**. As teclas de página (`←`/`→`, `PageUp`/`PageDown`)
+  têm a mesma semântica; `Ctrl+←/→` continua como salto direto de capítulo;
 - **Layout responsivo e centralizado**: o bloco de leitura fica
   **centralizado** na janela (não colado ao canto superior esquerdo), mesmo
   em livros cujo CSS define margens no `body`; em janelas estreitas o texto
@@ -114,9 +119,11 @@ pypub livro.epub
 
 - **Abrir**: `Ctrl+O` (ou passe o arquivo: `pypub livro.epub`);
 - **Navegar por capítulo**: `Ctrl+←` / `Ctrl+→` (anterior / próximo);
-- **Navegar por página**: **roda do mouse** (rodar para baixo = próxima,
-  para cima = anterior — não é rolagem livre) ou **setas** `←` / `→`
-  (`PageUp` / `PageDown` também). A posição exata fica no rodapé: “p. N/M”;
+- **Navegar**: **roda do mouse** (rodar para baixo = adiante, para cima =
+  atrás — não é rolagem livre) ou **setas** `←` / `→` / `PageUp` / `PageDown`.
+  Cada gesto anda uma página; **no fim do capítulo, o gesto segue para o
+  próximo; no topo, volta ao anterior** (navegação unificada, como em leitor
+  de documento). A posição exata fica no rodapé: “p. N/M”;
 - **Zoom**: `Ctrl+=` / `Ctrl+-` (ou a API `zoomIn`/`zoomOut` da bridge);
   `Ctrl+0` / `resetZoom` volta a 100%. O **enquadramento é fixo** (sempre
   **1 coluna**): o zoom muda **somente o tamanho da fonte** (até 250%;
@@ -135,7 +142,8 @@ pypub livro.epub
 │  ├── sem toolbar (interface enxuta): abrir é Ctrl+O / CLI            │
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
 │  │   • paginação: pypub_info/nextPage/prevPage via runJavaScript     │
-│  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome> (Ctrl+←/→, zoom)│
+│  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome>                │
+│  │     (páginas/capítulos na borda, Ctrl+←/→, zoom)                │
 │  │   • zoom: pypub_setZoom(z) no documento (só a fonte; quadro fixo) │
 │  ├── atalhos: Shortcut de janela (view sem foco) + keydown na página │
 │  │   • roda do mouse + setas ←/→ → pypub_nextPage/prevPage          │
@@ -306,10 +314,13 @@ valida, sem abrir display:
    (polling, com **descarte de info de documento antigo** — `src` da
    resposta precisa casar com a URL da view), `nextPage`/`prevPage`,
    **setas na página** (`ArrowRight`/
-   `ArrowLeft` via `keydown` do documento), **roda do mouse** (wheel → troca
-   de página, não rolagem livre), o **canal JS→Python** (`Ctrl+→` no documento
-   → fragmento de URL → `bridge.next()`, esperando o capítulo novo carregar
-   antes do próximo passo) e o **zoom via teclado** (`Ctrl+=` →
+   `ArrowLeft` via `keydown` do documento), **roda do mouse** (wheel → etapa
+   de navegação, não rolagem livre), **roda unificada** (no fim do capítulo,
+   o gesto avança para o próximo — página 1 —; no topo, volta ao anterior;
+   as teclas de página têm a mesma semântica), o **canal JS→Python**
+   (`Ctrl+→` no documento → fragmento de URL → `bridge.next()`, esperando o
+   capítulo novo carregar antes do próximo passo) e o **zoom via teclado**
+   (`Ctrl+=` →
    `bridge.zoomIn()` → documento com a fonte aplicada (enquadramento fixo),
    sem recarga). O final da suíte inclui um **settling** antes do teardown: com o
    renderer ainda ocupado com a última navegação, a destruição dos objetos do
