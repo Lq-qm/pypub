@@ -18,15 +18,7 @@ import logging
 from PySide6.QtCore import QObject, Property, Signal, Slot
 
 from .epub import Epub, EpubError, chapter_title
-from .renderer import (
-    THEMES,
-    columns_for_zoom,
-    empty_html,
-    page_background,
-    prepare_chapter,
-    theme_ui_font,
-    ui_colors,
-)
+from .renderer import columns_for_zoom, empty_html, page_background, prepare_chapter
 from .server import ChapterServer
 
 _log = logging.getLogger(__name__)
@@ -70,9 +62,6 @@ class EpubBridge(QObject):
     zoomChanged = Signal()
     darkChanged = Signal()
     errorChanged = Signal()
-    #: mudaram tema/cores (escolha do usuário OU mudança do sistema com
-    #: tema "default") — notifica emptyHtml/pageBackground/ui* etc.
-    themeChanged = Signal()
     #: emitido com o HTML pronto para renderização (incluindo estado vazio)
     contentChanged = Signal(str)
 
@@ -81,9 +70,7 @@ class EpubBridge(QObject):
         self._epub: Epub | None = None
         self._index = 0
         self._zoom = 1.0
-        # tema de leitura ("default" segue o **sistema** — ver _system_dark();
-        # "beige" e "gray" são paletas fixas com fontes próprias — ver THEMES)
-        self._theme = "default"
+        # tema de leitura: único, segue o **sistema** (claro/escuro)
         self._dark = _system_dark()
         self._last_error = ""
         self._last_dir = ""
@@ -143,37 +130,13 @@ class EpubBridge(QObject):
     def dark(self) -> bool:
         return self._dark
 
-    @Property(str, notify=themeChanged)
-    def theme(self) -> str:
-        """Tema de leitura ativo: "default" | "beige" | "gray" (ver THEMES)."""
-        return self._theme
-
-    @Property(str, notify=themeChanged)
+    @Property(str, notify=darkChanged)
     def emptyHtml(self) -> str:
-        return empty_html(self._theme, self._dark)
+        return empty_html(self._dark)
 
-    @Property(str, notify=themeChanged)
+    @Property(str, notify=darkChanged)
     def pageBackground(self) -> str:
-        return page_background(self._theme, self._dark)
-
-    # Cores da APLICAÇÃO (toolbar/rodapé/sumário/janela) para o tema ativo —
-    # vazias no tema "default" (o QML cai no padrão do Kirigami nesse caso).
-    @Property(str, notify=themeChanged)
-    def uiBackground(self) -> str:
-        return ui_colors(self._theme)["background"]
-
-    @Property(str, notify=themeChanged)
-    def uiForeground(self) -> str:
-        return ui_colors(self._theme)["foreground"]
-
-    @Property(str, notify=themeChanged)
-    def uiAccent(self) -> str:
-        return ui_colors(self._theme)["accent"]
-
-    @Property(str, notify=themeChanged)
-    def uiFont(self) -> str:
-        """Fonte da UI para o tema (vazia no default = fonte do Kirigami)."""
-        return theme_ui_font(self._theme)
+        return page_background(self._dark)
 
     @Property(float, notify=zoomChanged)
     def zoom(self) -> float:
@@ -265,19 +228,18 @@ class EpubBridge(QObject):
 
     @Slot(result=str)
     def currentHtml(self) -> str:
-        """HTML pronto do capítulo atual (ou estado vazio) — no tema ativo."""
+        """HTML pronto do capítulo atual (ou estado vazio) — tema do sistema."""
         if self._epub is None:
-            return empty_html(self._theme, self._dark)
+            return empty_html(self._dark)
         ch = self._epub.chapters[self._index]
         try:
             raw = self._epub.read(ch.path)
         except KeyError:
-            return empty_html(self._theme, self._dark)
+            return empty_html(self._dark)
         return prepare_chapter(
             raw.decode("utf-8", "replace"),
             ch.path,
             self._epub,
-            theme=self._theme,
             dark=self._dark,
             zoom=self._zoom,
         )
@@ -299,40 +261,14 @@ class EpubBridge(QObject):
     def resetZoom(self) -> None:
         self._set_zoom(1.0)
 
-    @Slot(str, result=bool)
-    def setTheme(self, theme: str) -> bool:
-        """Aplica um tema de leitura: ``default`` (segue o sistema), ``beige``
-        (bege escuro + Mulish) ou ``gray`` (cinza escuro + Bitstream Charter).
-
-        Re-renderiza o conteúdo atual (mesmo capítulo; a página volta ao
-        início) e repinta a interface (via uiBackground/uiForeground/uiFont —
-        o QML re-evalua as bindings ao sinalizar ``themeChanged``).
-        Tema inválido → ``False`` (estado intacto).
-        """
-        if theme not in THEMES:
-            self._set_error(f"tema desconhecido: {theme!r}")
-            return False
-        if theme == self._theme:
-            return True
-        self._theme = theme
-        self.themeChanged.emit()
-        self._emit_content()  # novo HTML (mesmo capítulo, nova paleta/fonte)
-        return True
-
     def _on_system_color_scheme(self) -> None:
-        """O esquema do OS mudou.
-
-        Tema "default" → re-renderiza (segue o sistema). Temas fixos
-        (beige/cinza) ignoram a mudança — a paleta é própria, não segue o SO.
-        """
+        """O esquema do OS mudou → re-renderiza (o tema segue o sistema)."""
         value = _system_dark()
         if value == self._dark:
             return
         self._dark = value
         self.darkChanged.emit()
-        if self._theme == "default":
-            self.themeChanged.emit()
-            self._emit_content()
+        self._emit_content()
 
     # ------------------------------------------------------------------ utils
     def _set_zoom(self, value: float) -> None:
@@ -355,9 +291,8 @@ class EpubBridge(QObject):
         """Serve o HTML pronto atual e emite a URL para a view navegar.
 
         A URL muda a cada emissão (``?r=<revisão>``): atribuir a mesma URL
-        de novo não recarrega a view, então a revisão garante o reload —
-        inclusive para troca de tema no mesmo capítulo (zoom NÃO recarrega:
-        é aplicado no documento via pypub_setZoom).
+        de novo não recarrega a view, então a revisão garante o reload
+        (zoom NÃO recarrega: é aplicado no documento via pypub_setZoom).
         """
         if self._epub is not None:
             ch = self._epub.chapters[self._index]

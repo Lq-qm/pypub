@@ -49,9 +49,8 @@ body, body[class] {
     overflow: hidden;
 }
 body {
-    /* A fonte é do TEMA (ver THEMES/theme_css abaixo) — o tema padrão usa
-       "Noto Sans" (a fonte atual); "beige" usa Mulish; "cinza" usa
-       Bitstream Charter. */
+    /* Fonte base do leitor (fallback — se o EPUB declarar a própria tipografia,
+       ela vale; Noto Sans é a família de reserva). */
     line-height: 1.75;
     text-align: justify;
     -webkit-hyphens: auto;
@@ -96,146 +95,31 @@ _PAGE_BG_LIGHT = "#fbfaf7"
 _PAGE_BG_DARK = "#1f2328"
 
 # ---------------------------------------------------------------------------
-# Temas de leitura
+# Tema de leitura — único: SEGUE O SISTEMA OPERACIONAL (claro/escuro)
 # ---------------------------------------------------------------------------
-# Três temas:
-#   - "default" — o padrão de sempre: segue o sistema operacional (claro/
-#     escuro) e mantém a fonte atual (Noto Sans). "ui_*" vazios = o resto da
-#     aplicação (toolbar/rodapé/sumário/janela) usa as cores do Kirigami;
-#   - "beige" — bege escuro, fonte **Mulish** (tema fixo, não segue o SO);
-#   - "gray"  — cinza mais escuro que o padrão, fonte **Bitstream Charter**
-#     (tema fixo, não segue o SO).
-# As cores "ui_*" pintam a APLICAÇÃO inteira (o QML as lê da bridge);
-# a paleta do conteúdo (text/background/link/...) vai no CSS do capítulo.
-# Fontes: instale com tools/install_theme_fonts.sh (Mulish: OFL 1.1;
-# Bitstream Charter: licença Bitstream — ver os arquivos junto às fontes).
-THEMES: dict[str, dict] = {
-    "default": {
-        "label": "Padrão (segue o sistema)",
-        "font": '"Noto Sans", "Segoe UI", "DejaVu Sans", sans-serif',
-        "fixed": False,
-    },
-    "beige": {
-        "label": "Bege escuro · Mulish",
-        "font": '"Mulish", "Noto Sans", "DejaVu Sans", sans-serif',
-        "fixed": True,
-        "palette": {
-            "text": "#e9dfc8",
-            "background": "#332e26",  # bege escuro
-            "link": "#d8b878",
-            "code": "#3f392d",
-            "blockquote": "rgba(216, 184, 120, 0.45)",
-            "ui_background": "#2a2620",
-            "ui_foreground": "#e9dfc8",
-            "ui_accent": "#c9a86a",
-        },
-    },
-    "gray": {
-        "label": "Cinza escuro · Bitstream Charter",
-        "font": '"Bitstream Charter", "Charter", "Noto Serif", serif',
-        "fixed": True,
-        "palette": {
-            "text": "#d8dee4",
-            "background": "#2f3338",  # cinza mais escuro que o padrão
-            "link": "#8ab4d8",
-            "code": "#3a3e44",
-            "blockquote": "rgba(138, 180, 216, 0.45)",
-            "ui_background": "#26292d",
-            "ui_foreground": "#d8dee4",
-            "ui_accent": "#8ab4d8",
-        },
-    },
-}
+# A bridge lê QStyleHints.colorScheme() (no KDE, a KColorScheme do Plasma;
+# offscreen → Unknown → claro) e re-renderiza ao vivo se o esquema do OS
+# mudar com o app aberto. A tipografia do próprio livro vale (se ele
+# declarar fonte); Noto Sans é o fallback do leitor. A interface (toolbar,
+# sumário, rodapé, janela) usa as cores do Kirigami/KDE — integração nativa.
+_UI_FONT_STACK = '"Noto Sans", "Segoe UI", "DejaVu Sans", sans-serif'
 
 
-def _theme(theme: str) -> dict:
-    """Tema pelo id (desconhecido → default)."""
-    return THEMES.get(theme) or THEMES["default"]
-
-
-def theme_css(theme: str = "default", dark: bool = False) -> str:
-    """Bloco de <style> do tema: fonte + cores.
-
-    "default" segue o modo do sistema (``dark``); os temas fixos têm
-    paleta própria e não mudam com o sistema.
-    """
-    t = _theme(theme)
-    pal = t.get("palette")
-    if t.get("fixed") and pal:
-        font = t["font"]
-        # A fonte do tema PRECISA vencer o CSS do próprio livro (ex.: EPUBs do
-        # Calibre: body.calibre { font-family: 'Sabon LT Std' } — especificidade
-        # 0-1-1, que ganha de "body" simples). "body, body[class]" + !important
-        # (e as tags de texto comuns) dominam a tipografia do livro — o leitor
-        # escolheu a fonte do tema de propósito. pre/code ficam fora: código
-        # mantém a fonte monoespaçada.
-        text_tags = (
-            "body, body[class], body p, body div, body span, body li, "
-            "body h1, body h2, body h3, body h4, body h5, body h6"
-        )
-        return (
-            ":root { color-scheme: dark; }\n"
-            f"body, body[class] {{ color: {pal['text']}; background: {pal['background']}; }}\n"
-            f"{text_tags} {{ font-family: {font} !important; }}\n"
-            f"a {{ color: {pal['link']}; }}\n"
-            f"blockquote {{ border-color: {pal['blockquote']}; }}\n"
-            f"pre, code {{ background: {pal['code']}; }}"
-        )
-    # Tema default: mantém o comportamento ATUAL — a tipografia do livro
-    # (se ele declarar) continua valendo; Noto Sans é só o fallback.
+def theme_css(dark: bool = False) -> str:
+    """Bloco de <style> do tema (segue o modo do sistema — ``dark``)."""
     base = _DARK if dark else _LIGHT
-    return f"{base}\nbody {{ font-family: {t['font']}; }}"
+    return f"{base}\nbody {{ font-family: {_UI_FONT_STACK}; }}"
 
 
-def theme_font(theme: str = "default") -> str:
-    """CSS font-family do tema (para o QML usar a mesma fonte na UI)."""
-    return _theme(theme)["font"]
-
-
-def theme_ui_font(theme: str = "default") -> str:
-    """Nome de família para o font.family do QML (a primeira do stack).
-
-    Vazio = usar a fonte padrão da interface (Kirigami).
-    """
-    t = _theme(theme)
-    if t is THEMES["default"]:
-        return ""
-    stack = t["font"]
-    first = stack.split(",", 1)[0].strip().strip('"').strip("'")
-    return first
-
-
-def page_background(theme: str = "default", dark: bool = False) -> str:
-    """Cor de fundo da área de leitura para o tema (pinta a view QML)."""
-    t = _theme(theme)
-    pal = t.get("palette")
-    if t.get("fixed") and pal:
-        return pal["background"]
+def page_background(dark: bool = False) -> str:
+    """Cor de fundo da área de leitura (pinta a view QML)."""
     return _PAGE_BG_DARK if dark else _PAGE_BG_LIGHT
 
 
-def ui_colors(theme: str = "default") -> dict[str, str]:
-    """Cores da APLICAÇÃO (toolbar/rodapé/sumário/janela) para o tema.
-
-    Valores vazios = usar o padrão do Kirigami (tema default).
-    """
-    pal = (_theme(theme).get("palette") or {})
-    return {
-        "background": pal.get("ui_background", ""),
-        "foreground": pal.get("ui_foreground", ""),
-        "accent": pal.get("ui_accent", ""),
-    }
-
-
-def empty_html(theme: str = "default", dark: bool = False) -> str:
-    """Página "abra um EPUB" — já com o tema (fonte + cores) aplicado."""
-    t = _theme(theme)
-    pal = t.get("palette")
-    if t.get("fixed") and pal:
-        fg, bg = pal["ui_foreground"], pal["ui_background"]
-    else:
-        fg, bg = ("#8a8f98", _PAGE_BG_DARK) if dark else ("#555a63", _PAGE_BG_LIGHT)
-    style = f'font-family:{t["font"]};text-align:center;padding-top:18vh;color:{fg};background:{bg};'
+def empty_html(dark: bool = False) -> str:
+    """Página "abra um EPUB" — já com o tema (cores conforme o sistema)."""
+    fg, bg = ("#8a8f98", _PAGE_BG_DARK) if dark else ("#555a63", _PAGE_BG_LIGHT)
+    style = f'font-family:{_UI_FONT_STACK};text-align:center;padding-top:18vh;color:{fg};background:{bg};'
     return (
         '<html><head><meta charset="utf-8"></head>'
         f'<body style="{style}">'
@@ -582,10 +466,10 @@ def inline_local_resources(html: str, chapter_path: str, epub: Epub) -> str:
 
 
 # --------------------------------------------------------------------- injeção
-def inject_css(html: str, theme: str = "default", dark: bool = False, zoom: float = 1.0) -> str:
-    """Injeta o CSS do leitor (tema + zoom inicial) no HTML do capítulo."""
+def inject_css(html: str, dark: bool = False, zoom: float = 1.0) -> str:
+    """Injeta o CSS do leitor (tema do sistema + zoom inicial) no capítulo."""
     zoom_rule = f":root {{ --pypub-zoom: {zoom:g}; }}"
-    style = f"<style>{_BASE_CSS}{zoom_rule}{theme_css(theme, dark)}</style>"
+    style = f"<style>{_BASE_CSS}{zoom_rule}{theme_css(dark)}</style>"
     m = re.search(r"</head\s*>", html, re.IGNORECASE)
     if m:
         return html[: m.start()] + style + html[m.start() :]
@@ -613,17 +497,16 @@ def prepare_chapter(
     raw_html: str,
     chapter_path: str,
     epub: Epub,
-    theme: str = "default",
     dark: bool = False,
     zoom: float = 1.0,
 ) -> str:
     """Prepara o HTML do capítulo: recursos inline + CSS do leitor + paginação.
 
-    ``theme`` escolhe paleta + fonte ("default"/"beige"/"gray"; "default"
-    segue o modo do sistema via ``dark``); ``zoom`` fixa o estado INICIAL da
-    fonte (enquadramento fixo em 1 coluna) — o ajuste em runtime é feito por
-    ``pypub_setZoom`` no documento, sem recarga.
+    O tema SEGUe o sistema operacional (``dark`` = modo escuro do OS);
+    ``zoom`` fixa o estado INICIAL da fonte (enquadramento fixo em 1 coluna)
+    — o ajuste em runtime é feito por ``pypub_setZoom`` no documento, sem
+    recarga.
     """
     html = inline_local_resources(raw_html, chapter_path, epub)
-    html = inject_css(html, theme, dark, zoom)
+    html = inject_css(html, dark, zoom)
     return inject_page_js(html)

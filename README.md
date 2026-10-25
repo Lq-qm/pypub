@@ -51,18 +51,10 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   variável CSS `--pypub-zoom`), tanto para **zoom+** quanto para **zoom-**.
   **Sem recarga** — a posição de leitura é preservada. Controles: `Ctrl+=`
   / `Ctrl+-` / `Ctrl+0` na página e a bridge (`zoomIn`/`zoomOut`/`resetZoom`);
-- **Temas de leitura** — menu “Tema” na toolbar, três opções:
-  - **Padrão** — segue o modo claro/escuro do sistema (re-renderiza ao vivo
-    se o tema do OS mudar com o app aberto); a tipografia do próprio livro
-    vale (se ele declarar fonte), senão Noto Sans;
-  - **Bege escuro · Mulish** — paleta bege fixa + fonte **Mulish**
-    (variable font, OFL 1.1);
-  - **Cinza escuro · Bitstream Charter** — paleta cinza fixa + fonte
-    **Bitstream Charter** (Bitstream Inc.).
-
-  O tema afeta a **aplicação inteira** — janela, toolbar, botões, ícones,
-  menu, sumário, rodapé (texto, fundo, hover) **e o conteúdo** (paleta +
-  fonte via CSS); os temas fixos não mudam com o sistema.
+- **Tema segue o sistema** — modo claro/escuro do SO (a `KColorScheme` do
+  Plasma; re-renderiza ao vivo se o tema do OS mudar com o app aberto);
+  a tipografia do próprio livro vale (se ele declarar fonte), senão Noto
+  Sans; a interface usa as cores do Kirigami/KDE (integração nativa);
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `←` / `→` (páginas),
@@ -133,16 +125,9 @@ pypub livro.epub
   **1 coluna**): o zoom muda **somente o tamanho da fonte** (até 250%;
   mínimo 60%), tanto para **zoom+** quanto para **zoom-**. A página **nunca
   é escalada** — o enquadramento e a posição de leitura são preservados;
-- **Tema**: botão “Tema” na toolbar → menu com três opções (checkable):
-  - **Padrão** — segue o modo claro/escuro do sistema (o visual atual);
-  - **Bege escuro · Mulish** — paleta bege fixa + fonte Mulish;
-  - **Cinza escuro · Bitstream Charter** — paleta cinza fixa + fonte
-    Bitstream Charter.
-
-  Os dois temas fixos trazem suas próprias fontes; se não instaladas, o
-  WebEngine usa o fallback da família. Para instalar **Mulish** e
-  **Bitstream Charter** no usuário (sem root, com licenças): `bash
-  tools/install_theme_fonts.sh`.
+- **Tema**: segue o **sistema operacional** (sem alternância manual) — se
+  o tema do Plasma (Breeze/BreezeDark) mudar com o app aberto, o capítulo é
+  re-renderizado na hora.
 
 ## Arquitetura
 
@@ -359,8 +344,7 @@ valida, sem abrir display:
 ├── tests/
 │   └── test_headless.py     # testes offscreen (parser/bridge/render/QML)
 └── tools/
-    ├── make_sample_epub.py      # gera um .epub de exemplo para os testes
-    └── install_theme_fonts.sh   # instala Mulish + Bitstream Charter (per-user)
+    └── make_sample_epub.py      # gera um .epub de exemplo para os testes
 ```
 
 ## Limitações e próximos passos
@@ -376,7 +360,7 @@ valida, sem abrir display:
 - `QWebEngineUrlSchemeHandler` (se/ quando exposto no PySide6) para servir
   recursos do EPUB por schema customizado em vez de inline `data:` URIs
   (menos memória em livros grandes);
-- Persistência (ex.: `QSettings` ou JSON) de posição/zoom/tema;
+- Persistência (ex.: `QSettings` ou JSON) de posição/zoom;
 - Testes parametrizados (pytest) e CI com `QT_QPA_PLATFORM=offscreen`.
 
 ## Solução de problemas

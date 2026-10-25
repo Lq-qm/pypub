@@ -25,79 +25,6 @@ K.ApplicationWindow {
     property string lastError: bridge ? bridge.lastError : ""
     property real zoom: bridge ? bridge.zoom : 1.0
 
-    // Tema de leitura: "default" (segue o sistema) | "beige" (Mulish) |
-    // "gray" (Bitstream Charter) — as cores/fonte da APLICAÇÃO inteira vêm da
-    // bridge (uiBackground/uiForeground/uiFont); vazias no default = usar o
-    // padrão do Kirigami (o tema 1 é exatamente o visual atual).
-    property string uiBackground: bridge ? bridge.uiBackground : ""
-    property string uiForeground: bridge ? bridge.uiForeground : ""
-    property string uiFont: bridge ? bridge.uiFont : ""
-
-    // CORES da interface INTEIRA (janela, toolbar, botões, menu, sumário,
-    // rodapé): tema fixo define (uiBackground/uiForeground); o default usa
-    // as cores do sistema — singleton Kirigami (módulo importado como K, então
-    // o identificador nulo "Kirigami" nunca existe) com fallback por esquema.
-    property color uiBg: uiBackground.length > 0
-        ? Qt.color(uiBackground)
-        : (typeof K.Kirigami !== "undefined" ? K.Kirigami.background
-            : (Qt.colorScheme === Qt.colorSchemeDark ? "#1e1f22" : "#f3f1ea"))
-    property color uiFg: uiForeground.length > 0
-        ? Qt.color(uiForeground)
-        : (typeof K.Kirigami !== "undefined" ? K.Kirigami.textColor
-            : (Qt.colorScheme === Qt.colorSchemeDark ? "#e6e6e6" : "#1c1c1c"))
-    // hover/pressed/checked: fundo escuro → clarear; fundo claro → escurecer
-    readonly property real uiLum: 0.299 * uiBg.r + 0.587 * uiBg.g + 0.114 * uiBg.b
-    readonly property color uiHi: uiLum > 0.6 ? Qt.darker(uiBg, 0.78) : Qt.lighter(uiBg, 1.45)
-
-    // janela: cor de fundo + fonte seguem o tema ativo (default → sistema)
-    color: uiBg
-    font.family: uiFont.length > 0 ? uiFont : "Noto Sans"
-
-    // aplica um tema (menu "Tema" da toolbar / testes): a bridge re-renderiza
-    // o conteúdo e repinta a interface (sinal themeChanged)
-    function setTheme(themeId) {
-        bridge ? bridge.setTheme(themeId) : undefined
-    }
-
-    // gancho de teste (mesmo padrão de dbgScript): definir pendingTheme
-    // dispara setTheme() — QMetaObject.invokeMethod com argumento não
-    // funciona neste PySide6 (sem QArgument/QVariant)
-    property string pendingTheme: ""
-    onPendingThemeChanged: {
-        if (pendingTheme !== "") {
-            var t = pendingTheme
-            pendingTheme = ""
-            window.setTheme(t)
-        }
-    }
-
-    // gancho de teste: snapshot das CORES da interface (o PySide6 não expõe
-    // as classes Controls tipadas — palette/icon só são legíveis do lado QML;
-    // invokeMethod sem argumento funciona, como em dbgScript)
-    property string uiProbe: ""
-    // o delegate do sumário se expõe aqui: o ``id`` de um delegate fica
-    // invisível fora do Component (regra do QML) — var untyped, lido em
-    // runtime pelo probeUi
-    property var probeTocDelegate: null
-    function probeUi() {
-        function _hex(c) {
-            function h(v) { return ("0" + Math.round(v * 255).toString(16)).slice(-2) }
-            return "#" + h(c.r) + h(c.g) + h(c.b)
-        }
-        var dlg = window.probeTocDelegate
-        uiProbe = JSON.stringify({
-            winBg: _hex(window.uiBg),
-            winFg: _hex(window.uiFg),
-            winHi: _hex(window.uiHi),
-            btnText: themeButton ? _hex(themeButton.palette.buttonText) : null,
-            btnIcon: themeButton ? _hex(themeButton.icon.color) : null,
-            menuBg: themeMenu ? _hex(themeMenu.palette.window) : null,
-            miText: themeItemDef ? _hex(themeItemDef.palette.buttonText) : null,
-            dlgText: dlg ? _hex(dlg.palette.buttonText) : null,
-            lblColor: pageLabel ? _hex(pageLabel.color) : null
-        })
-    }
-
     title: hasBook ? (bookTitle + " — PyPub") : "PyPub"
 
     function _applyPageInfo(res) {
@@ -212,13 +139,7 @@ K.ApplicationWindow {
         // setas ←/→ (tratadas no <script> da página — ver renderer._PAGE_JS;
         // os botões de zoom, Aa−/Aa+/"1:1", já haviam saído a pedido — a
         // capacidade segue na bridge: zoomIn/zoomOut/resetZoom).
-        // O botão "Tema" abre o seletor de temas de leitura (3 opções;
-        // a ativa fica marcada) — ver o Menu abaixo e bridge.setTheme().
         header: ToolBar {
-            // fundo segue o tema (default → cores do sistema)
-            background: Rectangle {
-                color: window.uiBg
-            }
             Row {
                 id: headerRow
                 anchors.fill: parent
@@ -233,87 +154,10 @@ K.ApplicationWindow {
                     checkable: true
                     checked: mainPage.showToc
                     onClicked: mainPage.showToc = !mainPage.showToc
-                    // texto/ícone/hover/checked seguem o tema
-                    palette.button: window.uiBg
-                    palette.buttonText: window.uiFg
-                    palette.highlight: window.uiHi
-                    palette.highlightedText: window.uiFg
-                    icon.color: window.uiFg
-                }
-                ToolButton {
-                    id: themeButton
-                    objectName: "themeButton"
-                    text: qsTr("Tema")
-                    icon.name: "preferences-desktop-color"
-                    palette.button: window.uiBg
-                    palette.buttonText: window.uiFg
-                    palette.highlight: window.uiHi
-                    palette.highlightedText: window.uiFg
-                    icon.color: window.uiFg
-                    // abre o menu de temas abaixo do botão (este build do
-                    // QtQuick.Controls não tem o attached Menu.button — usa
-                    // open() com posição explícita; o botão tem o id
-                    // themeButton para o teste localizar)
-                    onClicked: {
-                        themeMenu.x = 0
-                        themeMenu.y = themeButton.height
-                        themeMenu.open()
-                    }
-                    // Menu de temas de leitura — a escolha repinta a aplicação
-                    // inteira (janela/toolbar/rodapé/sumário via ui*) e o
-                    // conteúdo (paleta + fonte via bridge.setTheme):
-                    //   default — padrão atual: segue o sistema, fonte Noto Sans
-                    //   beige   — bege escuro, fonte Mulish
-                    //   gray    — cinza escuro, fonte Bitstream Charter
-                    Menu {
-                        id: themeMenu
-                        // o popup do menu também segue o tema
-                        palette.window: window.uiBg
-                        palette.windowText: window.uiFg
-                        palette.button: window.uiBg
-                        palette.buttonText: window.uiFg
-                        palette.highlight: window.uiHi
-                        palette.highlightedText: window.uiFg
-                        MenuItem {
-                            id: themeItemDef
-                            text: qsTr("Padrão (segue o sistema)")
-                            checkable: true
-                            checked: (bridge ? bridge.theme : "default") === "default"
-                            onTriggered: window.setTheme("default")
-                            // o palette do item é copiado do pai na criação —
-                            // bindar explicitamente para acompanhar o tema
-                            palette.buttonText: window.uiFg
-                            palette.highlight: window.uiHi
-                            palette.highlightedText: window.uiFg
-                        }
-                        MenuItem {
-                            text: qsTr("Bege escuro · Mulish")
-                            checkable: true
-                            checked: (bridge ? bridge.theme : "default") === "beige"
-                            onTriggered: window.setTheme("beige")
-                            palette.buttonText: window.uiFg
-                            palette.highlight: window.uiHi
-                            palette.highlightedText: window.uiFg
-                        }
-                        MenuItem {
-                            text: qsTr("Cinza escuro · Bitstream Charter")
-                            checkable: true
-                            checked: (bridge ? bridge.theme : "default") === "gray"
-                            onTriggered: window.setTheme("gray")
-                            palette.buttonText: window.uiFg
-                            palette.highlight: window.uiHi
-                            palette.highlightedText: window.uiFg
-                        }
-                    }
                 }
                 ToolButton {
                     text: qsTr("Abrir…")
                     icon.name: "document-open"
-                    palette.button: window.uiBg
-                    palette.buttonText: window.uiFg
-                    palette.highlight: window.uiHi
-                    palette.highlightedText: window.uiFg
-                    icon.color: window.uiFg
                     onClicked: bridge ? bridge.chooseFile() : undefined
                 }
             }
@@ -326,14 +170,12 @@ K.ApplicationWindow {
             // Sumário (sidebar): lista de capítulos clicável — substitui os
             // botões "Cap. anterior/próximo". QtQuick.Controls puro (o
             // Kirigami C++ tem conflito de binários neste ambiente).
-            Rectangle {
+            Item {
                 id: tocPanel
                 objectName: "tocPanel"
                 visible: mainPage.showToc
                 width: visible ? 260 : 0
                 height: contentRow.height
-                // fundo segue o tema (default → cores do sistema)
-                color: window.uiBg
                 clip: true
 
                 Column {
@@ -349,7 +191,6 @@ K.ApplicationWindow {
                         width: parent.width
                         text: qsTr("Sumário")
                         font.bold: true
-                        color: window.uiFg
                     }
 
                     ListView {
@@ -370,17 +211,6 @@ K.ApplicationWindow {
                             text: (index + 1) + ".  " + (modelData.title || "")
                             highlighted: (bridge ? bridge.currentIndex : -1) === index
                             onClicked: { if (bridge) bridge.goTo(index) }
-                            // expõe o delegate ao window (o id não escapa do
-                            // Component) para o probeUi ler a cor do texto
-                            Component.onCompleted: {
-                                if (index === 0)
-                                    window.probeTocDelegate = tocDelegate
-                            }
-                            // texto/hover/capítulo-atual seguem o tema
-                            palette.button: window.uiBg
-                            palette.buttonText: window.uiFg
-                            palette.highlight: window.uiHi
-                            palette.highlightedText: window.uiFg
                         }
                     }
                 }
@@ -400,71 +230,68 @@ K.ApplicationWindow {
                     // o enquadramento é fixo (1 coluna) — não sobre a view.
                     zoomFactor: 1.0
                     backgroundColor: bridge ? bridge.pageBackground : "white"
-            // O conteúdo é servido por um servidor local (127.0.0.1): loadHtml
-            // é instável para HTML grande no Qt 6.12 e a view não expõe load().
-            Component.onCompleted: {
-                if (bridge && bridge.contentUrl().length > 0)
-                    reader.url = Qt.url(bridge.contentUrl())
-            }
-            // este build não expõe loadFinished(); usa a propriedade loading
-            onLoadingChanged: {
-                if (!loading) {
-                    // garante o estado de zoom após o load (a renderização
-                    // inicial já sai certa; isso cobre zoom mudando no load)
-                    window.applyZoomToPage()
-                    window.startPageInfoPolling()
-                }
-            }
-            // Canal JS→Python: com a view focada (estado normal de leitura),
-            // Ctrl+←/→ e as trocas de página (roda/setas) são tratados pelo
-            // <script> da página (renderer._PAGE_JS), que escreve a ação no
-            // fragmento da URL (#pypub:cmd:<nome>) via history.replaceState —
-            // sem entrada no histórico. O QWebChannel não funciona neste wheel
-            // do PySide6 (tipo QML quebrado; webChannel exige QQmlWebChannel,
-            // sem binding Python), então o fragmento é o nosso transporte:
-            // urlChanged dispara aqui e a gente executa.
-            onUrlChanged: {
-                // neste build, reader.url chega como string no contexto JS
-                var u = String(reader.url)
-                var hash = u.indexOf("#")
-                var fragment = hash >= 0 ? u.substring(hash + 1) : ""
-                if (fragment.startsWith("pypub:cmd:")) {
-                    var action = fragment.substring("pypub:cmd:".length)
-                    if (action === "next") {
-                        bridge ? bridge.next() : undefined
-                    } else if (action === "prev") {
-                        bridge ? bridge.previous() : undefined
-                    } else if (action === "zoomin") {
-                        bridge ? bridge.zoomIn() : undefined
-                    } else if (action === "zoomout") {
-                        bridge ? bridge.zoomOut() : undefined
-                    } else if (action === "zoomreset") {
-                        bridge ? bridge.resetZoom() : undefined
-                    } else if (action.indexOf("page") === 0) {
-                        // Troca de página DENTRO da página (roda do mouse /
-                        // setas com foco): a página já andou (go()); aqui o QML
-                        // só sincroniza o contador "p. N/M" do rodapé. O nº na
-                        // fragment ("page:N") só existe para a URL mudar a cada
-                        // evento — o valor de referência é o pypub_info() que
-                        // o refresh lê agora.
-                        window.refreshPageInfo()
+                    // O conteúdo é servido por um servidor local (127.0.0.1):
+                    // loadHtml é instável para HTML grande no Qt 6.12 e a view
+                    // não expõe load().
+                    Component.onCompleted: {
+                        if (bridge && bridge.contentUrl().length > 0)
+                            reader.url = Qt.url(bridge.contentUrl())
                     }
-                    // limpa o fragmento (sem deixar no histórico); urlChanged
-                    // dispara de novo sem o prefixo → inócuo
-                    reader.runJavaScript(
-                        "history.replaceState(null, '', location.pathname + location.search)",
-                        function() {})
+                    // este build não expõe loadFinished(); usa a propriedade loading
+                    onLoadingChanged: {
+                        if (!loading) {
+                            // garante o estado de zoom após o load (a renderização
+                            // inicial já sai certa; isso cobre zoom mudando no load)
+                            window.applyZoomToPage()
+                            window.startPageInfoPolling()
+                        }
+                    }
+                    // Canal JS→Python: com a view focada (estado normal de leitura),
+                    // Ctrl+←/→ e as trocas de página (roda/setas) são tratados pelo
+                    // <script> da página (renderer._PAGE_JS), que escreve a ação no
+                    // fragmento da URL (#pypub:cmd:<nome>) via history.replaceState —
+                    // sem entrada no histórico. O QWebChannel não funciona neste wheel
+                    // do PySide6 (tipo QML quebrado; webChannel exige QQmlWebChannel,
+                    // sem binding Python), então o fragmento é o nosso transporte:
+                    // urlChanged dispara aqui e a gente executa.
+                    onUrlChanged: {
+                        // neste build, reader.url chega como string no contexto JS
+                        var u = String(reader.url)
+                        var hash = u.indexOf("#")
+                        var fragment = hash >= 0 ? u.substring(hash + 1) : ""
+                        if (fragment.startsWith("pypub:cmd:")) {
+                            var action = fragment.substring("pypub:cmd:".length)
+                            if (action === "next") {
+                                bridge ? bridge.next() : undefined
+                            } else if (action === "prev") {
+                                bridge ? bridge.previous() : undefined
+                            } else if (action === "zoomin") {
+                                bridge ? bridge.zoomIn() : undefined
+                            } else if (action === "zoomout") {
+                                bridge ? bridge.zoomOut() : undefined
+                            } else if (action === "zoomreset") {
+                                bridge ? bridge.resetZoom() : undefined
+                            } else if (action.indexOf("page") === 0) {
+                                // Troca de página DENTRO da página (roda do mouse /
+                                // setas com foco): a página já andou (go()); aqui o QML
+                                // só sincroniza o contador "p. N/M" do rodapé. O nº na
+                                // fragment ("page:N") só existe para a URL mudar a cada
+                                // evento — o valor de referência é o pypub_info() que
+                                // o refresh lê agora.
+                                window.refreshPageInfo()
+                            }
+                            // limpa o fragmento (sem deixar no histórico); urlChanged
+                            // dispara de novo sem o prefixo → inócuo
+                            reader.runJavaScript(
+                                "history.replaceState(null, '', location.pathname + location.search)",
+                                function() {})
+                        }
+                    }
                 }
             }
-            }
-        }
         }
 
         footer: Frame {
-            // fundo segue o tema (default → cores do sistema)
-            background: Rectangle {
-                color: window.uiBg
-            }
             Row {
                 id: statusRow
                 anchors.fill: parent
@@ -483,26 +310,23 @@ K.ApplicationWindow {
                         : (window.lastError.length > 0
                             ? window.lastError
                             : qsTr("Abra um arquivo .epub para começar  (Ctrl+O)"))
-                    // O singleton ``Kirigami`` nem sempre é registrado; usa-o se
-                    // existir, senão cai em cores adaptadas ao esquema claro/escuro.
-                    // Erro tem sempre a cor de erro; senão, a cor de 1º plano do
-                    // tema ativo (vazia no default → textColor do Kirigami).
+                    // Erro tem sempre a cor de erro do sistema; o resto segue a
+                    // cor de 1º plano do Kirigami (padrão do item).
                     color: window.lastError.length > 0
                         ? (typeof K.Kirigami !== "undefined" ? K.Kirigami.errorColor : "#b03030")
-                        : window.uiFg
+                        : (typeof K.Kirigami !== "undefined" ? K.Kirigami.textColor
+                            : (Qt.colorScheme === Qt.colorSchemeDark ? "#e6e6e6" : "#1c1c1c"))
                 }
                 Label {
                     id: pageLabel
                     anchors.verticalCenter: parent.verticalCenter
                     visible: window.hasBook
                     text: qsTr("p. %1/%2").arg(window.currentPage).arg(window.pageCount)
-                    color: window.uiFg
                 }
                 Label {
                     id: zoomLabel
                     anchors.verticalCenter: parent.verticalCenter
                     text: Math.round(window.zoom * 100) + " %"
-                    color: window.uiFg
                 }
             }
         }
