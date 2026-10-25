@@ -31,9 +31,6 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 
 - **Abrir e ler `.epub`** (EPUB 2/3, ZIP + OCF/OPF) — sem bibliotecas de
   parseamento externas;
-- **Sumário (TOC)** — botão “Sumário” na toolbar abre a barra lateral com a
-  lista de capítulos (número + título, capítulo atual destacado); clicar num
-  capítulo vai direto a ele (segue o *spine* linear do livro);
 - **Navegação entre capítulos** — `Ctrl+←` / `Ctrl+→` (anterior/próximo);
 - **Leitura uma página por vez** — o conteúdo é **cortado na tela** (sem
   barra de rolagem, sem rolagem livre, sem seleção além da página visível);
@@ -61,6 +58,9 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   `Ctrl+←` / `Ctrl+→` (capítulos), `PageUp` / `PageDown` (páginas),
   `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom) — funcionam com a view focada
   (tratados no próprio documento) e sem foco (atalhos de janela);
+- **Interface enxuta** — sem toolbar, sem sumário, sem botões de
+  navegação/zoom: abrir é `Ctrl+O` (ou `pypub livro.epub`); navegação é por
+  atalhos/gestos (capítulo `Ctrl+←/→`, página roda/setas);
 - **Testes headless** (offscreen) cobrindo parser, ponte Python↔QML,
   renderização e a janela Kirigami real.
 
@@ -93,7 +93,7 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 
 ```sh
 uv sync            # cria o .venv e instala PySide6 + PySide6-WebEngine
-uv run pypub       # abre o leitor (use "Abrir…" / Ctrl+O para escolher o .epub)
+uv run pypub       # abre o leitor (Ctrl+O para escolher o .epub)
 ```
 
 Ou abra um EPUB diretamente ao iniciar:
@@ -112,10 +112,7 @@ pypub livro.epub
 
 ## Uso
 
-- **Abrir**: botão “Abrir…” na toolbar ou `Ctrl+O`;
-- **Sumário**: botão “Sumário” na toolbar abre/fecha a barra lateral com a
-  lista de capítulos — clicar num capítulo vai a ele (o capítulo atual fica
-  destacado);
+- **Abrir**: `Ctrl+O` (ou passe o arquivo: `pypub livro.epub`);
 - **Navegar por capítulo**: `Ctrl+←` / `Ctrl+→` (anterior / próximo);
 - **Navegar por página**: **roda do mouse** (rodar para baixo = próxima,
   para cima = anterior — não é rolagem livre) ou **setas** `←` / `→`
@@ -135,9 +132,7 @@ pypub livro.epub
 ┌──────────────────────────────────────────────────────────────────────┐
 │  QML / Kirigami  (pypub/qml/Main.qml)                                │
 │  K.ApplicationWindow + K.Page                                         │
-│  ├── toolbar: ToolButtons (Abrir, Sumário)                           │
-│  │            ← ToolButton/ToolBar do QtQuick.Controls               │
-│  ├── sumário: barra lateral (ListView de capítulos; clique → goTo)   │
+│  ├── sem toolbar (interface enxuta): abrir é Ctrl+O / CLI            │
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
 │  │   • paginação: pypub_info/nextPage/prevPage via runJavaScript     │
 │  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome> (Ctrl+←/→, zoom)│
@@ -310,9 +305,7 @@ valida, sem abrir display:
    abre um livro com a UI viva e confere o título, o indicador “p. N/M”
    (polling, com **descarte de info de documento antigo** — `src` da
    resposta precisa casar com a URL da view), `nextPage`/`prevPage`,
-   **sumário (barra lateral)** (clique no botão “Sumário” abre o painel;
-   clique na linha do capítulo → `bridge.goTo` — com retry, pois a entrega de
-   eventos no offscreen é instável), **setas na página** (`ArrowRight`/
+   **setas na página** (`ArrowRight`/
    `ArrowLeft` via `keydown` do documento), **roda do mouse** (wheel → troca
    de página, não rolagem livre), o **canal JS→Python** (`Ctrl+→` no documento
    → fragmento de URL → `bridge.next()`, esperando o capítulo novo carregar

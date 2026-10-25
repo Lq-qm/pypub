@@ -95,10 +95,11 @@ class Epub:
             raise EpubError(f"container.xml ilegível: {e}") from e
 
         rootfile = container.find(f"{_CONTAINER_NS}rootfiles/{_CONTAINER_NS}rootfile")
-        if rootfile is None or not rootfile.get("full-path"):
+        full_path = rootfile.get("full-path") if rootfile is not None else None
+        if not full_path:
             raise EpubError("EPUB inválido: container.xml sem rootfile")
 
-        opf_path = posixpath.normpath(rootfile.get("full-path"))
+        opf_path = posixpath.normpath(full_path)
         if opf_path not in names:
             raise EpubError(f"EPUB inválido: pacote OPF não encontrado ({opf_path})")
 

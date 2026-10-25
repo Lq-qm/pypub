@@ -622,7 +622,7 @@ def test_qml(app):
         time.sleep(0.05)
     assert (win.property("currentPage") or 0) == 1, "currentPage deveria começar em 1"
 
-    # caminho das funções da UI (o mesmo usado pelos botões da toolbar)
+    # funções de página da UI (invocadas também pelos atalhos de janela)
     from PySide6.QtCore import QMetaObject, Qt
 
     QMetaObject.invokeMethod(win, "nextPage", Qt.ConnectionType.DirectConnection)
@@ -638,102 +638,6 @@ def test_qml(app):
         app.processEvents()
         time.sleep(0.05)
     assert (win.property("currentPage") or 0) == 1, "prevPage() (UI) não trocou a página"
-
-    # --- Botões/CLIQUE (regressão: K.ActionToolBar/K.Action não renderizam
-    # neste ambiente — ToolButton plain do QtQuick.Controls é o caminho
-    # validado; o "Sumário" é o botão de navegação que a toolbar mantém) ---
-    from PySide6.QtCore import QEvent, QPointF
-    from PySide6.QtGui import QMouseEvent
-
-    def find_button(text):
-        for o in win.findChildren(QQuickItem):
-            if o.metaObject().className().startswith("ToolButton") and o.property("text") == text:
-                return o
-        return None
-
-    def click_and_wait(item, predicate, timeout=15.0):
-        # clique sintético com retry: a entrega de eventos mouse via
-        # sendEvent é instável no offscreen (o press pode não registrar no
-        # state machine do control antes do release) — repete até o efeito
-        # (predicate) ocorrer ou estourar o timeout
-        x = float(item.property("width")) / 2
-        y = float(item.property("height")) / 2
-
-        def one_click():
-            press = QMouseEvent(QEvent.Type.MouseButtonPress, QPointF(x, y), QPointF(x, y), QPointF(x, y),
-                                Qt.MouseButton.LeftButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier)
-            app.sendEvent(item, press)
-            app.processEvents()
-            time.sleep(0.03)
-            app.processEvents()
-            release = QMouseEvent(QEvent.Type.MouseButtonRelease, QPointF(x, y), QPointF(x, y), QPointF(x, y),
-                                  Qt.MouseButton.LeftButton, Qt.MouseButton.NoButton, Qt.KeyboardModifier.NoModifier)
-            app.sendEvent(item, release)
-            app.processEvents()
-            time.sleep(0.03)
-            app.processEvents()
-
-        t0 = time.time()
-        while time.time() - t0 < timeout:
-            one_click()
-            deadline = time.time() + 2
-            while time.time() < deadline:
-                app.processEvents()
-                time.sleep(0.05)
-                if predicate():
-                    return True
-        return bool(predicate())
-
-    # --- Sumário (barra lateral): lista de capítulos, clique abre ---
-    # Substitui os antigos botões "Cap. anterior/próximo": o botão "Sumário"
-    # da toolbar abre o painel e a linha do capítulo executa bridge.goTo(i).
-    toc_btn = find_button("Sumário")
-    assert toc_btn is not None, "ToolButton 'Sumário' não encontrado na toolbar"
-    toc_panel = win.findChild(QQuickItem, "tocPanel")
-    assert toc_panel is not None, "tocPanel não encontrado na UI"
-    assert click_and_wait(toc_btn, lambda: bool(toc_panel.property("visible"))), \
-        "clique em 'Sumário' não abriu a barra lateral"
-    assert float(toc_panel.property("width")) > 200, "barra lateral sem largura"
-
-    i_now = int(bridge.currentIndex)  # type: ignore[call-arg]
-    n_chap = int(bridge.chapterCount)  # type: ignore[call-arg]
-    i_target = i_now + 1 if i_now < n_chap - 1 else i_now - 1
-
-    # NB (Qt 6.12/PySide6): delegates do ListView NÃO têm parent QObject
-    # (só parent visual) — win.findChildren/findChild não os encontram.
-    # Percorre os childItems do contentItem do ListView.
-    def find_toc_row(i):
-        for o in win.findChildren(QQuickItem):
-            if o.metaObject().className() == "QQuickListView":
-                ci = o.property("contentItem")
-                if ci:
-                    for c in ci.childItems():
-                        if str(c.property("objectName") or "") == f"tocRow-{i}":
-                            return c
-        return None
-
-    # os delegates do ListView são criados com um pequeno atraso (lazy)
-    row = None
-    t0 = time.time()
-    while row is None and time.time() - t0 < 15:
-        row = find_toc_row(i_target)
-        app.processEvents()
-        time.sleep(0.05)
-    assert row is not None, f"linha 'tocRow-{i_target}' não encontrada no sumário"
-
-    def chap_is_target():
-        return int(bridge.currentIndex) == i_target  # type: ignore[call-arg]
-
-    assert click_and_wait(row, chap_is_target), \
-        f"clique na linha do capítulo não trocou o capítulo ({i_now} -> {i_target})"
-    # capítulo novo = documento novo: espera o load antes de operar a página
-    assert wait_current_document(), "documento do capítulo novo não carregou na view"
-    t0 = time.time()
-    while (win.property("pageCount") or 1) < 2 and time.time() - t0 < 30:
-        app.processEvents()
-        time.sleep(0.1)
-    assert (win.property("pageCount") or 1) >= 2, "indicador de página não atualizou no capítulo novo"
-    print("OK sumário (barra lateral: capítulo", i_now, "→", i_target, "por clique)")
 
     # --- Setas na página (keydown do documento: a view tem o foco na leitura) ---
     # → próxima página, ← anterior (a troca de capítulo segue em Ctrl+seta)
@@ -768,7 +672,7 @@ def test_qml(app):
     # --- Roda do mouse: rolar = troca de página (não rolagem livre) ---
     # O evento de wheel vai à view e o <script> da página acumula o gesto
     # (120px/nota ≥ limiar → 1 página; cooldown de 350 ms por gesto).
-    from PySide6.QtCore import QPoint
+    from PySide6.QtCore import QPoint, QPointF
     from PySide6.QtGui import QWheelEvent
 
     def wheel_once(dy):

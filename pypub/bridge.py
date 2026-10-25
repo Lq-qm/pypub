@@ -149,10 +149,10 @@ class EpubBridge(QObject):
 
     @Property(str, notify=bookChanged)
     def chaptersJson(self) -> str:
-        """Lista de capítulos (``index`` + ``title``) em JSON — sumário (sidebar).
+        """Lista de capítulos (``index`` + ``title``) em JSON.
 
         PySide6 → QML não entrega lista de objetos de forma simples; JSON é o
-        formato mais robusto (o QML faz ``JSON.parse(bridge.chaptersJson)``).
+        formato mais robusto (consumo QML faz ``JSON.parse(bridge.chaptersJson)``).
         """
         if self._epub is None:
             return "[]"

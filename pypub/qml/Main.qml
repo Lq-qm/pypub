@@ -123,108 +123,15 @@ K.ApplicationWindow {
     pageStack.initialPage: K.Page {
         id: mainPage
 
-        // Sumário (barra lateral): lista de capítulos, clique abre o capítulo.
-        property bool showToc: false
+        // Sem toolbar (interface enxuta — sumário e botões saíram a pedido):
+        // abrir é Ctrl+O (Shortcut abaixo) ou a linha de comando
+        // (pypub livro.epub); capítulo é Ctrl+←/→; página é roda/setas
+        // (no <script> da página, renderer._PAGE_JS); a capacidade segue na
+        // bridge (chooseFile/openFile/goTo/next/previous/zoomIn/zoomOut/resetZoom).
 
-        // Toolbar — por que ToolButton/ToolBar (QtQuick.Controls) e não
-        // K.ActionToolBar + K.Action? Nesta combinação (Kirigami 6.31 do
-        // sistema + Qt do wheel do PySide6), o ToolBarLayout C++ do Kirigami
-        // não reconhece as ações QML: nenhuma delegação é renderizada
-        // (0 botões na árvore), reproduzível até com um K.Action trivial.
-        // O ToolButton puro (mesma lib QtQuick.Controls da view) renderiza
-        // e dispara onClicked normalmente — verificado offscreen.
-        //
-        // A navegação por CAPÍTULO saiu dos botões para o sumário (sidebar);
-        // a navegação por PÁGINA saiu dos botões para a roda do mouse +
-        // setas ←/→ (tratadas no <script> da página — ver renderer._PAGE_JS;
-        // os botões de zoom, Aa−/Aa+/"1:1", já haviam saído a pedido — a
-        // capacidade segue na bridge: zoomIn/zoomOut/resetZoom).
-        header: ToolBar {
-            Row {
-                id: headerRow
-                anchors.fill: parent
-                anchors.leftMargin: 4
-                anchors.rightMargin: 4
-                spacing: 2
-
-                ToolButton {
-                    objectName: "tocButton"
-                    text: qsTr("Sumário")
-                    icon.name: "view-list"
-                    checkable: true
-                    checked: mainPage.showToc
-                    onClicked: mainPage.showToc = !mainPage.showToc
-                }
-                ToolButton {
-                    text: qsTr("Abrir…")
-                    icon.name: "document-open"
-                    onClicked: bridge ? bridge.chooseFile() : undefined
-                }
-            }
-        }
-
-        contentItem: Row {
-            id: contentRow
-            spacing: 0
-
-            // Sumário (sidebar): lista de capítulos clicável — substitui os
-            // botões "Cap. anterior/próximo". QtQuick.Controls puro (o
-            // Kirigami C++ tem conflito de binários neste ambiente).
-            Item {
-                id: tocPanel
-                objectName: "tocPanel"
-                visible: mainPage.showToc
-                width: visible ? 260 : 0
-                height: contentRow.height
-                clip: true
-
-                Column {
-                    id: tocColumn
-                    anchors.fill: parent
-                    anchors.topMargin: 10
-                    anchors.leftMargin: 6
-                    anchors.rightMargin: 6
-                    spacing: 6
-
-                    Label {
-                        id: tocHeader
-                        width: parent.width
-                        text: qsTr("Sumário")
-                        font.bold: true
-                    }
-
-                    ListView {
-                        id: tocList
-                        width: parent.width
-                        height: Math.max(0, parent.height - tocHeader.height - tocColumn.spacing)
-                        clip: true
-                        model: bridge ? JSON.parse(bridge.chaptersJson) : []
-                        delegate: ItemDelegate {
-                            id: tocDelegate
-                            // objectName estável por índice: o teste localiza
-                            // a linha do capítulo via findChild("tocRow-<i>")
-                            objectName: "tocRow-" + index
-                            width: tocList.width
-                            // NB (Qt 6.12/PySide6): com modelo de array JS, o
-                            // contexto do delegate expõe o item em ``modelData``
-                            // — ``model.title`` não resolve (validado offscreen).
-                            text: (index + 1) + ".  " + (modelData.title || "")
-                            highlighted: (bridge ? bridge.currentIndex : -1) === index
-                            onClicked: { if (bridge) bridge.goTo(index) }
-                        }
-                    }
-                }
-            }
-
-            Item {
-                id: readerHolder
-                width: Math.max(0, contentRow.width - tocPanel.width)
-                height: contentRow.height
-
-                WebEngineView {
-                    id: reader
-                    objectName: "reader"
-                    anchors.fill: parent
+        contentItem: WebEngineView {
+            id: reader
+            objectName: "reader"
                     // A página NUNCA escala: o zoom age SOMENTE sobre a fonte
                     // (18px * z) via pypub_setZoom (applyZoomToPage, acima);
                     // o enquadramento é fixo (1 coluna) — não sobre a view.
@@ -287,8 +194,6 @@ K.ApplicationWindow {
                                 function() {})
                         }
                     }
-                }
-            }
         }
 
         footer: Frame {

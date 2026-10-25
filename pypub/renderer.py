@@ -101,7 +101,7 @@ _PAGE_BG_DARK = "#1f2328"
 # offscreen → Unknown → claro) e re-renderiza ao vivo se o esquema do OS
 # mudar com o app aberto. A tipografia do próprio livro vale (se ele
 # declarar fonte); Noto Sans é o fallback do leitor. A interface (toolbar,
-# sumário, rodapé, janela) usa as cores do Kirigami/KDE — integração nativa.
+# rodapé, janela) usa as cores do Kirigami/KDE — integração nativa.
 _UI_FONT_STACK = '"Noto Sans", "Segoe UI", "DejaVu Sans", sans-serif'
 
 
