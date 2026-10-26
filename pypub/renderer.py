@@ -242,6 +242,20 @@ _PAGE_JS = """
     prevChapter();
     return { cmd: "prev" };
   }
+  // Andar N etapas (N pode ser > 1: flick rápido da roda = várias páginas de
+  // uma vez). Se alguma etapa atravessa a borda do capítulo (retorna
+  // {cmd}), para logo: o documento novo já vem a caminho e este (que segue
+  // vivo durante o carregamento) não pode disparar outra troca de capítulo.
+  function stepMany(count) {
+    var dir = count > 0 ? 1 : -1;
+    var n = Math.abs(count);
+    var i, r;
+    for (i = 0; i < n; i++) {
+      r = step(dir);
+      if (r && r.cmd) break;
+    }
+    return r;
+  }
   // canal JS→Python via fragmento da URL (ver comentário no topo): o QML
   // observa urlChanged, lê #pypub:cmd:<nome> e dispara a ação correspondente
   function cmd(name) {
@@ -277,27 +291,45 @@ _PAGE_JS = """
       if (sp > state.page) state.page = sp;
     });
 
-    // Roda do mouse = navegação UNIFICADA (como em leitor de documento):
-    // cada gesto (deltaY acumulado — normalizado pelo deltaMode (0=px, 1=
-    // linhas, 2=páginas) — limiar WHEEL_UNIT; cooldown de 350 ms entre
-    // gestos) anda UMA etapa (step): a próxima/anterior página; no fim do
-    // capítulo, o PRÓXIMO capítulo; no topo, o ANTERIOR. Sempre
-    // preventDefault: o conteúdo NÃO rola livre, ele anda de página em
-    // página (e de capítulo em capítulo nas bordas).
-    var wheelAcc = 0;
+    // Roda do mouse = navegação UNIFICADA e PRECISA (como em leitor de
+    // documento): a quantidade rolada vira PÁGINAS e é acumulada COM RESTO
+    // fracionário entre os eventos do mesmo gesto — o avanço é PROPORCIONAL
+    // ao que se rolou:
+    //   • 1 dente padrão (120 px / 3 linhas / 1 página) = 1 página;
+    //   • flick rápido = várias páginas de uma vez (stepMany);
+    //   • rolagem fina (trackpad) = fração de página que acumula até
+    //     completar uma — controle sub-página, nada é "perdido".
+    // O resto só carrega DENTRO do gesto (eventos a até WHEEL_GAP ms de
+    // distância); um resto antigo não cancela o gesto novo. Nas bordas do
+    // capítulo a etapa segue para o capítulo vizinho (mesmo step() das
+    // teclas). O ratio páginas/dente é PAGES_PER_NOTCH (ajuste ao gosto).
+    // Sempre preventDefault: o conteúdo NÃO rola livre.
+    var PAGES_PER_NOTCH = 1;   // 1 dente padrão = 1 página (1 notch = 120 px
+                               // = 3 linhas = 1 página, em qualquer deltaMode)
+    var WHEEL_GAP = 500;       // ms: intervalo máximo dentro do MESMO gesto
+    var wheelAcc = 0;          // rolagem acumulada, em PÁGINAS (com sinal)
     var wheelLast = 0;
-    var WHEEL_UNIT = 60;  // unidades acumuladas por etapa (ver normalização)
+    function deltaYtoPages(d, mode) {
+      var perPage = (mode === 1) ? (1 / 3) : (mode === 2) ? 1 : (1 / 120);
+      return d * perPage * PAGES_PER_NOTCH;
+    }
     window.addEventListener("wheel", function (e) {
       if (!e) return;
       var d = e.deltaY || 0;
       if (d !== 0) {
         var now = Date.now();
-        if (now - wheelLast > 350) wheelAcc = 0;   // gesto novo
-        var unit = (e.deltaMode === 1) ? 10 : (e.deltaMode === 2) ? 100 : 1;
-        wheelAcc += d * unit;
+        if (now - wheelLast > WHEEL_GAP) wheelAcc = 0;  // gesto novo: recomeça
+        wheelAcc += deltaYtoPages(d, e.deltaMode || 0);
         wheelLast = now;
-        if (wheelAcc >= WHEEL_UNIT) { wheelAcc = 0; step(1); }
-        else if (wheelAcc <= -WHEEL_UNIT) { wheelAcc = 0; step(-1); }
+        if (wheelAcc >= 1) {
+          var n = Math.floor(wheelAcc);
+          stepMany(n);
+          wheelAcc -= n;   // o resto fracionário carrega para o próximo evento
+        } else if (wheelAcc <= -1) {
+          var m = Math.floor(-wheelAcc);
+          stepMany(-m);
+          wheelAcc += m;
+        }
       }
       e.preventDefault();
       e.stopPropagation();

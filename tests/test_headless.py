@@ -775,6 +775,45 @@ def test_qml(app):
     else:
         print("OK roda unificada (pulada: o livro está no capítulo final)")
 
+    # --- Roda PRECISA: o avanço é PROPORCIONAL à rolagem (nada engessado) ---
+    # • flick rápido (1 evento com 2 dentes, 2×120 px) → avança EXATAMENTE 2
+    #   páginas (não há trava de "1 página por gesto");
+    # • frações de página acumulam DENTRO do mesmo gesto: 2× meia página
+    #   (2×60 px) → 1 página no total (controle sub-página, nada perdido).
+    # NB: o wheel é despachado DENTRO do documento (o offscreen não entrega
+    # o QWheelEvent sintético à view — validado por probe; é o mesmo
+    # fallback do wheel_and_wait acima). A LÓGICA testada é a da página JS.
+    def wheel_js(dy):
+        page_js(f"window.dispatchEvent(new WheelEvent('wheel', {{deltaY: {dy}, deltaMode: 0, bubbles: true, cancelable: true}}))")
+
+    page_js("pypub_goToPage(1)")
+    ti = json.loads(page_js("JSON.stringify(pypub_info())"))
+    if int(ti["total"]) >= 4:
+        pp = int(ti["current"])
+        wheel_js(+240)  # 1 evento com 2 dentes (2 × 120 px)
+        t0 = time.time()
+        while cur_page() != pp + 2 and time.time() - t0 < 10:
+            app.processEvents()
+            time.sleep(0.05)
+        assert cur_page() == pp + 2, \
+            f"flick de 2 dentes não andou exatamente 2 páginas (p. {pp} -> {cur_page()})"
+        ph = cur_page()
+        wheel_js(+60)  # meia página — não completa → nada anda
+        time.sleep(0.15)  # < WHEEL_GAP (500 ms): mesmo gesto
+        app.processEvents()
+        assert cur_page() == ph, \
+            f"meia página (60 px) não deveria completar uma página (p. {ph} -> {cur_page()})"
+        wheel_js(+60)  # + meia página → completa 1 (resto acumulado)
+        t0 = time.time()
+        while cur_page() != ph + 1 and time.time() - t0 < 10:
+            app.processEvents()
+            time.sleep(0.05)
+        assert cur_page() == ph + 1, \
+            f"2× meia página não completaram 1 página (p. {ph} -> {cur_page()})"
+        print("OK roda precisa (flick 2 dentes = 2 páginas; 2× meia página = 1 página)")
+    else:
+        print("OK roda precisa (pulada: capítulo curto, < 4 páginas)")
+
     # --- Canal JS→Python via fragmento de URL (Ctrl+→ no documento) ---
     # O QWebChannel não funciona neste wheel do PySide6 (tipo QML quebrado;
     # webChannel exige QQmlWebChannel, sem binding Python). A página escreve

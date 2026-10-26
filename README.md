@@ -39,11 +39,14 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   rodapé, e enquadramento fixo (1 coluna). A troca de página é a única
   rolagem: **rodo do mouse** (rodar = trocar de página) e **setas**
   `←` / `→` (anterior/próxima); `PageUp` / `PageDown` também;
-- **Navegação unificada (como em leitor de documento)** — cada gesto da roda
-  anda uma etapa: a próxima/anterior página; **no fim do capítulo, o gesto
-  segue para o próximo capítulo** (que abre na página 1); **no topo, volta
-  ao capítulo anterior**. As teclas de página (`←`/`→`, `PageUp`/`PageDown`)
-  têm a mesma semântica; `Ctrl+←/→` continua como salto direto de capítulo;
+- **Navegação unificada (como em leitor de documento)** — o avanço da roda
+  é **proporcional à rolagem** (nada engessado): ~1 dente = 1 página, flick
+  rápido = várias páginas de uma vez, rolagem fina (trackpad) = fração de
+  página que acumula até completar (controle sub-página). **No fim do
+  capítulo, o gesto segue para o próximo** (que abre na página 1); **no
+  topo, volta ao anterior**. As teclas de página (`←`/`→`, `PageUp`/`PageDown`)
+  têm a mesma semântica (1 etapa); `Ctrl+←/→` continua como salto direto de
+título;
 - **Layout responsivo e centralizado**: o bloco de leitura fica
   **centralizado** na janela (não colado ao canto superior esquerdo), mesmo
   em livros cujo CSS define margens no `body`; em janelas estreitas o texto
@@ -122,9 +125,11 @@ pypub livro.epub
 - **Navegar por capítulo**: `Ctrl+←` / `Ctrl+→` (anterior / próximo);
 - **Navegar**: **roda do mouse** (rodar para baixo = adiante, para cima =
   atrás — não é rolagem livre) ou **setas** `←` / `→` / `PageUp` / `PageDown`.
-  Cada gesto anda uma página; **no fim do capítulo, o gesto segue para o
-  próximo; no topo, volta ao anterior** (navegação unificada, como em leitor
-  de documento). A posição exata fica no rodapé: “cap. N/M” + “p. N/M”
+  O avanço é **proporcional** à rolagem (~1 dente = 1 página; flick rápido
+  = várias de uma vez; rolagem fina = fração que acumula). **No fim do
+  capítulo, o gesto segue para o próximo; no topo, volta ao anterior**
+  (navegação unificada, como em leitor de documento). A posição exata fica
+  no rodapé: “cap. N/M” + “p. N/M”
   (o capítulo do livro e a página dentro dele);
 - **Zoom**: `Ctrl+=` / `Ctrl+-` (ou a API `zoomIn`/`zoomOut` da bridge);
   `Ctrl+0` / `resetZoom` volta a 100%. O **enquadramento é fixo** (sempre
@@ -320,7 +325,9 @@ valida, sem abrir display:
    `ArrowLeft` via `keydown` do documento), **roda do mouse** (wheel → etapa
    de navegação, não rolagem livre), **roda unificada** (no fim do capítulo,
    o gesto avança para o próximo — página 1 —; no topo, volta ao anterior;
-   as teclas de página têm a mesma semântica), o **canal JS→Python**
+   as teclas de página têm a mesma semântica), **roda precisa** (flick de
+   2 dentes = 2 páginas; 2× meia página = 1 página — avanço proporcional),
+   o **canal JS→Python**
    (`Ctrl+→` no documento → fragmento de URL → `bridge.next()`, esperando o
    capítulo novo carregar antes do próximo passo) e o **zoom via teclado**
    (`Ctrl+=` →
