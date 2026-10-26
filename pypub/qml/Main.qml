@@ -120,14 +120,29 @@ K.ApplicationWindow {
         }
     }
 
+    // Sem toolbar global do KPageRow (a faixa de ~46 px no topo era o lugar
+    // dos botões; sumário/toolbar saíram a pedido — a janela agora é só
+    // conteúdo + rodapé). Sem essa linha, o estilo "Auto" vira ToolBar no
+    // desktop e reserva o espaço mesmo sem ações.
+    pageStack.globalToolBar.style: K.ApplicationHeaderStyle.None
+
     pageStack.initialPage: K.Page {
         id: mainPage
 
-        // Sem toolbar (interface enxuta — sumário e botões saíram a pedido):
-        // abrir é Ctrl+O (Shortcut abaixo) ou a linha de comando
-        // (pypub livro.epub); capítulo é Ctrl+←/→; página é roda/setas
-        // (no <script> da página, renderer._PAGE_JS); a capacidade segue na
-        // bridge (chooseFile/openFile/goTo/next/previous/zoomIn/zoomOut/resetZoom).
+        // A view preenche a página inteira (sem paddings — as margens de
+        // leitura vêm do CSS do capítulo, renderer._BASE_CSS: 28px em cima,
+        // 32px laterais, 72px embaixo). O rodapé (footer) fica colado na base.
+        padding: 0
+        topPadding: 0
+        leftPadding: 0
+        rightPadding: 0
+        bottomPadding: 0
+
+        // Interface enxuta (sumário e botões saíram a pedido): abrir é
+        // Ctrl+O (Shortcut abaixo) ou a linha de comando (pypub livro.epub);
+        // capítulo é Ctrl+←/→; página é roda/setas (no <script> da página,
+        // renderer._PAGE_JS); a capacidade segue na bridge
+        // (chooseFile/openFile/goTo/next/previous/zoomIn/zoomOut/resetZoom).
 
         contentItem: WebEngineView {
             id: reader

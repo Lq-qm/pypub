@@ -69,7 +69,12 @@ título;
   (tratados no próprio documento) e sem foco (atalhos de janela);
 - **Interface enxuta** — sem toolbar, sem sumário, sem botões de
   navegação/zoom: abrir é `Ctrl+O` (ou `pypub livro.epub`); navegação é por
-  atalhos/gestos (capítulo `Ctrl+←/→`, página roda/setas);
+  atalhos/gestos (capítulo `Ctrl+←/→`, página roda/setas). A janela é só
+  **conteúdo + rodapé**: o toolbar global do Kirigami (`KPageRow`) é
+  desligado (`ApplicationHeaderStyle.None`) e os paddings da página são
+  zerados, então a view começa no topo da área de conteúdo (só a
+  decoração nativa do KDE fica acima) e as margens de leitura vêm do CSS
+  do capítulo (28px em cima, 32px laterais, 72px embaixo);
 - **Testes headless** (offscreen) cobrindo parser, ponte Python↔QML,
   renderização e a janela Kirigami real.
 
