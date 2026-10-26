@@ -622,6 +622,20 @@ def test_qml(app):
         time.sleep(0.05)
     assert (win.property("currentPage") or 0) == 1, "currentPage deveria começar em 1"
 
+    # --- Indicador de CAPÍTULO no rodapé (mesmo padrão do "p. N/M") ---
+    chap_label = win.findChild(QQuickItem, "chapterLabel")
+    assert chap_label is not None, "indicador de capítulo não encontrado no rodapé"
+    import re as _re
+
+    m = _re.match(r"cap\. (\d+)/(\d+)", str(chap_label.property("text") or ""))
+    assert m, f"indicador de capítulo com formato inesperado: {chap_label.property('text')!r}"
+    assert int(m.group(1)) == int(bridge.currentIndex) + 1, (  # type: ignore[call-arg]
+        f"nº do capítulo no rodapé ({m.group(1)}) != bridge ({int(bridge.currentIndex) + 1})"  # type: ignore[call-arg]
+    )
+    assert int(m.group(2)) == int(bridge.chapterCount), (  # type: ignore[call-arg]
+        f"total de capítulos no rodapé ({m.group(2)}) != bridge ({int(bridge.chapterCount)})"  # type: ignore[call-arg]
+    )
+
     # funções de página da UI (invocadas também pelos atalhos de janela)
     from PySide6.QtCore import QMetaObject, Qt
 

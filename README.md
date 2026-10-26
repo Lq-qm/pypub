@@ -34,8 +34,9 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 - **Navegação entre capítulos** — `Ctrl+←` / `Ctrl+→` (anterior/próximo);
 - **Leitura uma página por vez** — o conteúdo é **cortado na tela** (sem
   barra de rolagem, sem rolagem livre, sem seleção além da página visível);
-  uma “página” é o que cabe numa viewport de altura, com indicador “p. N/M”
-  no rodapé e enquadramento fixo (1 coluna). A troca de página é a única
+  uma “página” é o que cabe numa viewport de altura, com os indicadores
+  “cap. N/M” (capítulo do livro) e “p. N/M” (página dentro do capítulo) no
+  rodapé, e enquadramento fixo (1 coluna). A troca de página é a única
   rolagem: **rodo do mouse** (rodar = trocar de página) e **setas**
   `←` / `→` (anterior/próxima); `PageUp` / `PageDown` também;
 - **Navegação unificada (como em leitor de documento)** — cada gesto da roda
@@ -123,7 +124,8 @@ pypub livro.epub
   atrás — não é rolagem livre) ou **setas** `←` / `→` / `PageUp` / `PageDown`.
   Cada gesto anda uma página; **no fim do capítulo, o gesto segue para o
   próximo; no topo, volta ao anterior** (navegação unificada, como em leitor
-  de documento). A posição exata fica no rodapé: “p. N/M”;
+  de documento). A posição exata fica no rodapé: “cap. N/M” + “p. N/M”
+  (o capítulo do livro e a página dentro dele);
 - **Zoom**: `Ctrl+=` / `Ctrl+-` (ou a API `zoomIn`/`zoomOut` da bridge);
   `Ctrl+0` / `resetZoom` volta a 100%. O **enquadramento é fixo** (sempre
   **1 coluna**): o zoom muda **somente o tamanho da fonte** (até 250%;
@@ -147,7 +149,7 @@ pypub livro.epub
 │  │   • zoom: pypub_setZoom(z) no documento (só a fonte; quadro fixo) │
 │  ├── atalhos: Shortcut de janela (view sem foco) + keydown na página │
 │  │   • roda do mouse + setas ←/→ → pypub_nextPage/prevPage          │
-│  └── rodapé: status (capítulo/erros) + “p. N/M” + % zoom             │
+│  └── rodapé: status + “cap. N/M” + “p. N/M” + % zoom                │
 └───────────────▲──────────────────────────────────────────────────────┘
                 │ context property "bridge"
 ┌───────────────┴──────────────────────────────────────────────────────┐
@@ -310,7 +312,8 @@ valida, sem abrir display:
    (capítulo longo servido via HTTP local + paginação + centralização),
    captura screenshot e valida o estado vazio após fechar;
 3. **QML Kirigami (UI real)** — carrega o `Main.qml` real, cria a janela,
-   abre um livro com a UI viva e confere o título, o indicador “p. N/M”
+   abre um livro com a UI viva e confere o título, os indicadores “cap. N/M”
+   e “p. N/M”
    (polling, com **descarte de info de documento antigo** — `src` da
    resposta precisa casar com a URL da view), `nextPage`/`prevPage`,
    **setas na página** (`ArrowRight`/
@@ -344,7 +347,7 @@ valida, sem abrir display:
 │   ├── renderer.py          # inline de recursos + CSS responsivo + script de paginação
 │   ├── server.py            # servidor HTTP local (127.0.0.1) que serve o HTML
 │   └── qml/
-│       └── Main.qml         # interface Kirigami (toolbar, view, rodapé)
+│       └── Main.qml         # interface Kirigami (view, rodapé)
 ├── tests/
 │   └── test_headless.py     # testes offscreen (parser/bridge/render/QML)
 └── tools/

@@ -207,7 +207,10 @@ K.ApplicationWindow {
                 Label {
                     id: statusLabel
                     anchors.verticalCenter: parent.verticalCenter
+                    // larga o espaço exato dos indicadores da direita
+                    // (cap. + p. + zoom, com seus espaçamentos)
                     width: Math.max(0, statusRow.width
+                        - (chapterLabel.visible ? chapterLabel.width + statusRow.spacing : 0)
                         - pageLabel.width - zoomLabel.width - 2 * statusRow.spacing)
                     elide: Text.ElideRight
                     text: window.hasBook
@@ -221,6 +224,16 @@ K.ApplicationWindow {
                         ? (typeof K.Kirigami !== "undefined" ? K.Kirigami.errorColor : "#b03030")
                         : (typeof K.Kirigami !== "undefined" ? K.Kirigami.textColor
                             : (Qt.colorScheme === Qt.colorSchemeDark ? "#e6e6e6" : "#1c1c1c"))
+                }
+                // Indicador de CAPÍTULO (mesmo padrão do "p. N/M"): em qual
+                // capítulo do livro o leitor está — o "p. N/M" ao lado já
+                // mostra a página DENTRO daquele capítulo.
+                Label {
+                    id: chapterLabel
+                    objectName: "chapterLabel"
+                    anchors.verticalCenter: parent.verticalCenter
+                    visible: window.hasBook
+                    text: qsTr("cap. %1/%2").arg(window.currentIndex + 1).arg(window.chapterCount)
                 }
                 Label {
                     id: pageLabel
