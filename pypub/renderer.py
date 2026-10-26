@@ -142,11 +142,17 @@ def empty_html(dark: bool = False) -> str:
 #
 # Navegação de página: a leitura é PÁGINA A PÁGINA (uma página = um viewport
 # de altura), e a troca de página acontece por:
-# - **rodo do mouse** (wheel): o gesto é acumulado (com cooldown) e, ao
-#   atingir o limiar, avança/recua uma página — o conteúdo não rola livre;
+# - **rodo do mouse** (wheel SEM Ctrl): a quantidade rolada vira PÁGINAS
+#   acumuladas (proporcional; resto fracionário carrega no gesto) — o
+#   conteúdo não rola livre;
 # - **setas do teclado** (←/→, sem Ctrl): página anterior/próxima (Ctrl+←/→
 #   reserva para capítulos); PageUp/PageDown continuam funcionando;
-# - **Ctrl+= / Ctrl+- / Ctrl+0**: zoom (canal hash → bridge).
+# - **Ctrl+= / Ctrl+- / Ctrl+0**: zoom de fonte (canal hash → bridge).
+# Zoom por roda: **Ctrl+roda é consumido no QML** (MouseWheelHandler da
+# view → bridge.zoomIn/zoomOut, o mesmo zoom de Ctrl+=/-) ANTES do Chromium
+# (zoom nativo de página) e ANTES desta <script> — aqui o handler da roda
+# apenas IGNORA eventos com Ctrl/Meta (proteção de fundo): roda simples
+# pagina, Ctrl+roda só faz zoom; os dois atalhos nunca disparam juntos.
 # Cada troca (go()) também AVISA o QML pelo fragmento da URL
 # (#pypub:cmd:page:N → onUrlChanged → refreshPageInfo): assim o contador
 # "p. N/M" do rodapé segue a leitura em tempo real — inclusive nas trocas
@@ -315,6 +321,15 @@ _PAGE_JS = """
     }
     window.addEventListener("wheel", function (e) {
       if (!e) return;
+      // Ctrl/Cmd+roda é GESTO DE ZOOM (fonte) — tratado no QML (view), onde é
+      // consumido antes do Chromium. Se um evento Ctrl+roda chegar até aqui
+      // (qualquer caminho que pule o handler da view), NÃO toca na página:
+      // só a roda simples pagina.
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
       var d = e.deltaY || 0;
       if (d !== 0) {
         var now = Date.now();

@@ -814,6 +814,65 @@ def test_qml(app):
     else:
         print("OK roda precisa (pulada: capítulo curto, < 4 páginas)")
 
+    # --- Ctrl+roda = ZOOM (fonte) e NUNCA troca de página ---
+    # Os dois atalhos (página vs. zoom) não podem disparar juntos:
+    # • na VIEW, o event filter da bridge (attachWheelGuard) consome o
+    #   Ctrl+wheel ANTES do Chromium (zoom nativo de página) e ANTES da
+    #   <script> da página, convertendo-o no zoom de fonte do app;
+    # • no DOCUMENTO, o handler da roda ignora eventos com Ctrl/Meta
+    #   (proteção de fundo, qualquer caminho que pule o filter).
+    # Validado na página 1 (onde a re-layout do zoom não pode "andar").
+    from PySide6.QtCore import QPoint, QPointF  # noqa: F811 (já importado acima)
+    from PySide6.QtGui import QWheelEvent  # noqa: F811
+
+    def ctrl_wheel(dy):
+        pos = QPointF(float(reader.property("width")) / 2, 60.0)
+        ev = QWheelEvent(pos, pos, QPoint(0, dy), QPoint(0, dy),
+                         Qt.MouseButton.NoButton, Qt.KeyboardModifier.ControlModifier,
+                         Qt.ScrollPhase.ScrollUpdate, False)
+        app.sendEvent(reader, ev)
+        deadline = time.time() + 5
+        while time.time() < deadline:
+            app.processEvents()
+            time.sleep(0.05)
+
+    bridge.resetZoom()
+    page_js("pypub_goToPage(1)")
+    time.sleep(0.3)
+    app.processEvents()
+
+    ctrl_wheel(-120)   # ↑ → zoom in
+    z = float(bridge.zoom)  # type: ignore[call-arg]
+    assert abs(z - 1.1) < 1e-6, f"Ctrl+roda (cima) não aplicou zoom in (zoom={bridge.zoom})"
+    assert (win.property("currentPage") or 0) == 1, \
+        f"Ctrl+roda (cima) também trocou de página (p.{win.property('currentPage')})"
+
+    ctrl_wheel(-120)   # ↑ de novo → zoom in de novo
+    z = float(bridge.zoom)  # type: ignore[call-arg]
+    assert abs(z - 1.2) < 1e-6, f"2º Ctrl+roda (cima) não aplicou zoom (zoom={bridge.zoom})"
+    assert (win.property("currentPage") or 0) == 1, \
+        "Ctrl+roda também andou a página (zoom in)"
+
+    ctrl_wheel(+120)   # ↓ → zoom out (volta)
+    z = float(bridge.zoom)  # type: ignore[call-arg]
+    assert abs(z - 1.1) < 1e-6, f"Ctrl+roda (baixo) não aplicou zoom out (zoom={bridge.zoom})"
+    assert (win.property("currentPage") or 0) == 1, \
+        "Ctrl+roda também andou a página (zoom out)"
+
+    # proteção de fundo no documento: Ctrl+wheel que CHEGUE à página não pagina
+    page_js("pypub_goToPage(1)")
+    time.sleep(0.3)
+    app.processEvents()
+    page_js("window.dispatchEvent(new WheelEvent('wheel', {deltaY: 120, deltaMode: 0, ctrlKey: true, bubbles: true, cancelable: true}))")
+    time.sleep(0.5)
+    app.processEvents()
+    ti = json.loads(page_js("JSON.stringify(pypub_info())"))
+    assert int(ti["current"]) == 1, \
+        f"Ctrl+roda no documento trocou de página (p.{ti['current']})"
+
+    bridge.resetZoom()
+    print("OK Ctrl+roda = zoom (1.0→1.1→1.2→1.1) sem trocar de página; doc Ctrl+wheel não pagina")
+
     # --- Canal JS→Python via fragmento de URL (Ctrl+→ no documento) ---
     # O QWebChannel não funciona neste wheel do PySide6 (tipo QML quebrado;
     # webChannel exige QQmlWebChannel, sem binding Python). A página escreve

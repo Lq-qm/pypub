@@ -15,7 +15,7 @@ from __future__ import annotations
 import json
 import logging
 
-from PySide6.QtCore import QObject, Property, Signal, Slot
+from PySide6.QtCore import Property, QObject, Qt, Signal, Slot
 
 from .epub import Epub, EpubError, chapter_title
 from .renderer import columns_for_zoom, empty_html, page_background, prepare_chapter
@@ -54,6 +54,47 @@ def _system_dark() -> bool:
     return False
 
 
+class _CtrlWheelGuard(QObject):
+    """Intercepta **Ctrl+roda** na view ANTES do Chromium e da ``<script>`` da página.
+
+    Sem isso, dois atalhos disparam juntos: o Chromium aplica o seu zoom
+    nativo de página (fora do modelo "zoom muda só a fonte" e que resetaria
+    a cada capítulo) e a ``<script>`` da página troca de página. Com o
+    filter, Ctrl+roda vira o MESMO zoom de ``Ctrl+=/-/0`` (fonte, com o %
+    do rodapé) e a roda simples continua paginando no documento.
+
+    O filter roda em ``QObject::notify`` — SEMPRE antes de
+    ``QQuickWebEngineView.event()`` (que entrega o wheel ao web content),
+    então vale tanto para eventos reais quanto para testes offscreen
+    (``app.sendEvent(view, QWheelEvent(...))``).
+    """
+
+    def __init__(self, bridge: EpubBridge, parent: QObject | None = None) -> None:
+        super().__init__(parent)
+        self._bridge = bridge
+
+    def eventFilter(self, obj: QObject, ev: object) -> bool:  # type: ignore[override]
+        try:
+            from PySide6.QtGui import QWheelEvent
+
+            if isinstance(ev, QWheelEvent):
+                mods = ev.modifiers()
+                if mods & (Qt.KeyboardModifier.ControlModifier
+                           | Qt.KeyboardModifier.MetaModifier):
+                    dy = ev.angleDelta().y()
+                    if dy != 0 and self._bridge.hasBook:
+                        if dy < 0:
+                            self._bridge.zoomIn()
+                        else:
+                            self._bridge.zoomOut()
+                    # consumido: nem o zoom nativo do Chromium, nem a
+                    # troca de página da <script> da página acontecem
+                    return True
+        except Exception:
+            _log.debug("falha no event filter de Ctrl+roda", exc_info=True)
+        return False
+
+
 class EpubBridge(QObject):
     """Estado e ações expostos ao QML (context property ``bridge``)."""
 
@@ -77,6 +118,8 @@ class EpubBridge(QObject):
         self._server = ChapterServer()
         self._rev = 0
         self._last_url = ""
+        # event filter Ctrl+roda (instalado em attachWheelGuard, pelo QML)
+        self._wheel_guard: _CtrlWheelGuard | None = None
         # estado inicial: página vazia já servida e URL válida para o QML
         self._emit_content()
         # tema do OS pode mudar com o app aberto (ex.: alternar Breeze/BreezeDark
@@ -260,6 +303,20 @@ class EpubBridge(QObject):
     @Slot()
     def resetZoom(self) -> None:
         self._set_zoom(1.0)
+
+    @Slot(QObject)
+    def attachWheelGuard(self, view: QObject) -> None:
+        """Instala o guard de Ctrl+roda na ``WebEngineView`` (chamado do QML).
+
+        O guard (``_CtrlWheelGuard``) consome o wheel com Ctrl/Meta ANTES
+        do Chromium (zoom nativo de página) e ANTES da ``<script>`` da
+        página (troca de página), e o converte no zoom de fonte do app —
+        os dois atalhos (página vs. zoom) deixam de disparar juntos.
+        """
+        if self._wheel_guard is not None:
+            view.removeEventFilter(self._wheel_guard)
+        self._wheel_guard = _CtrlWheelGuard(self, view)
+        view.installEventFilter(self._wheel_guard)
 
     def _on_system_color_scheme(self) -> None:
         """O esquema do OS mudou → re-renderiza (o tema segue o sistema)."""
