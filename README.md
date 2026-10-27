@@ -173,8 +173,7 @@ pypub livro.epub
 │  │   • roda do mouse + setas ←/→ → pypub_nextPage/prevPage          │
 │  │   • Ctrl+roda → sem função (handler da página ignora Ctrl/Meta)   │
 │  │     zoom é só Ctrl+=/-/0; roda simples pagina                    │
-│  └── rodapé: status + “cap. N/M” + “p. N/M” + marcador de zoom     │
-│        (canto inferior direito, “100%”, à direita do “p. N/M”)     │
+│  └── rodapé: status + “cap. N/M” + “p. N/M”                         │
 └───────────────▲──────────────────────────────────────────────────────┘
                 │ context property "bridge"
 ┌───────────────┴──────────────────────────────────────────────────────┐

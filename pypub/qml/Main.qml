@@ -226,10 +226,10 @@ K.ApplicationWindow {
                     id: statusLabel
                     anchors.verticalCenter: parent.verticalCenter
                     // larga o espaço exato dos indicadores da direita
-                    // (cap. + p. + zoom, com seus 3 espaçamentos — 4 itens, 3 gaps)
+                    // (cap. + p., com seus 2 espaçamentos — 3 itens, 2 gaps)
                     width: Math.max(0, statusRow.width
                         - (chapterLabel.visible ? chapterLabel.width + statusRow.spacing : 0)
-                        - pageLabel.width - zoomLabel.width - 3 * statusRow.spacing)
+                        - pageLabel.width - 2 * statusRow.spacing)
                     elide: Text.ElideRight
                     text: window.hasBook
                         ? qsTr("Capítulo %1 de %2 — %3").arg(window.currentIndex + 1).arg(window.chapterCount).arg(window.currentChapterTitle)
@@ -259,16 +259,6 @@ K.ApplicationWindow {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: window.hasBook
                     text: qsTr("p. %1/%2").arg(window.currentPage).arg(window.pageCount)
-                }
-                // Marcador de ZOOM: canto inferior direito, ao lado direito
-                // do marcador de páginas ("p. N/M") — é o único indicador de
-                // porcentagem do rodapé (substitui o antigo "100 %"), então
-                // o usuário vê na hora o zoom de fonte atual.
-                Label {
-                    id: zoomLabel
-                    objectName: "zoomLabel"
-                    anchors.verticalCenter: parent.verticalCenter
-                    text: Math.round(window.zoom * 100) + "%"
                 }
             }
         }
