@@ -40,9 +40,10 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   rolagem: **rodo do mouse** (rodar = trocar de página) e **setas**
   `←` / `→` (anterior/próxima); `PageUp` / `PageDown` também;
 - **Navegação unificada (como em leitor de documento)** — o avanço da roda
-  é **proporcional à rolagem** (nada engessado): ~1 dente = 1 página, flick
-  rápido = várias páginas de uma vez, rolagem fina (trackpad) = fração de
-  página que acumula até completar (controle sub-página). **No fim do
+  é **proporcional à rolagem** (nada engessado): ~1 dente = 2 páginas
+  (sensibilidade alta — 60 px ≈ 1 página), flick rápido = várias páginas de
+  uma vez, rolagem fina (trackpad) = fração de página que acumula até
+  completar (controle sub-página). **No fim do
   capítulo, o gesto segue para o próximo** (que abre na página 1); **no
   topo, volta ao anterior**. As teclas de página (`←`/`→`, `PageUp`/`PageDown`)
   têm a mesma semântica (1 etapa); `Ctrl+←/→` continua como salto direto de
@@ -136,8 +137,9 @@ pypub livro.epub
 - **Navegar por capítulo**: `Ctrl+←` / `Ctrl+→` (anterior / próximo);
 - **Navegar**: **roda do mouse** (rodar para baixo = adiante, para cima =
   atrás — não é rolagem livre) ou **setas** `←` / `→` / `PageUp` / `PageDown`.
-  O avanço é **proporcional** à rolagem (~1 dente = 1 página; flick rápido
-  = várias de uma vez; rolagem fina = fração que acumula). **No fim do
+  O avanço é **proporcional** à rolagem (~1 dente = 2 páginas, 60 px ≈ 1
+  página — sensibilidade alta; flick rápido = várias de uma vez; rolagem
+  fina = fração que acumula). **No fim do
   capítulo, o gesto segue para o próximo; no topo, volta ao anterior**
   (navegação unificada, como em leitor de documento). A posição exata fica
   no rodapé: “cap. N/M” + “p. N/M”
@@ -278,9 +280,9 @@ fixo em 1 coluna).
   `pypub_prevPage()` e `pypub_goToPage(n)`; o QML chama via `runJavaScript`
   e atualiza o indicador “p. N/M”. `prevPage` no meio da página volta ao
   topo; `PageUp`/`PageDown`, as **setas** `←`/`→` e a **roda do mouse** usam
-  a mesma API. A roda é a “rolagem”: o `wheel` é acumulado (≥ 60 unidades ≈
-  1 página, com cooldown de 350 ms por gesto), então rolar = trocar de
-  página. As setas só navegam sem seleção de texto ativa (para não brigar com
+  a mesma API. A roda é a “rolagem”: o `wheel` é acumulado (60 px ≈ 1
+  página — ~1 dente = 2 páginas; resto fracionário carrega dentro do gesto,
+  janela de 500 ms), então rolar = trocar de página. As setas só navegam sem seleção de texto ativa (para não brigar com
   a seleção). O nº de páginas é reavaliado em redimensionamento e ao mudar o
   zoom.
 - **Atalhos de teclado** — duas frentes complementares, sem página dupla:
@@ -344,7 +346,7 @@ valida, sem abrir display:
    de navegação, não rolagem livre), **roda unificada** (no fim do capítulo,
    o gesto avança para o próximo — página 1 —; no topo, volta ao anterior;
    as teclas de página têm a mesma semântica), **roda precisa** (flick de
-   2 dentes = 2 páginas; 2× meia página = 1 página — avanço proporcional),
+   2 dentes = 4 páginas; 2× meia página = 1 página — avanço proporcional),
    **Ctrl+roda é ignorado** (nem zoom, nem página: o handler da roda no
    documento ignora Ctrl/Meta — o zoom é só `Ctrl+=`/`Ctrl+-`/`Ctrl+0`),
    o **canal JS→Python**

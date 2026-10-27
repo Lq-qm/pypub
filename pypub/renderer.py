@@ -300,7 +300,8 @@ _PAGE_JS = """
     // documento): a quantidade rolada vira PÁGINAS e é acumulada COM RESTO
     // fracionário entre os eventos do mesmo gesto — o avanço é PROPORCIONAL
     // ao que se rolou:
-    //   • 1 dente padrão (120 px / 3 linhas / 1 página) = 1 página;
+    //   • 1 dente padrão (120 px / 3 linhas) = 2 páginas (sensibilidade
+    //     alta: 60 px ≈ 1 página);
     //   • flick rápido = várias páginas de uma vez (stepMany);
     //   • rolagem fina (trackpad) = fração de página que acumula até
     //     completar uma — controle sub-página, nada é "perdido".
@@ -309,8 +310,8 @@ _PAGE_JS = """
     // capítulo a etapa segue para o capítulo vizinho (mesmo step() das
     // teclas). O ratio páginas/dente é PAGES_PER_NOTCH (ajuste ao gosto).
     // Sempre preventDefault: o conteúdo NÃO rola livre.
-    var PAGES_PER_NOTCH = 1;   // 1 dente padrão = 1 página (1 notch = 120 px
-                               // = 3 linhas = 1 página, em qualquer deltaMode)
+    var PAGES_PER_NOTCH = 2;   // 1 dente padrão = 2 páginas (1 notch = 120 px
+                               // = 3 linhas = 2 páginas, em qualquer deltaMode)
     var WHEEL_GAP = 500;       // ms: intervalo máximo dentro do MESMO gesto
     var wheelAcc = 0;          // rolagem acumulada, em PÁGINAS (com sinal)
     var wheelLast = 0;
