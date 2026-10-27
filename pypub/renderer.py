@@ -148,11 +148,10 @@ def empty_html(dark: bool = False) -> str:
 # - **setas do teclado** (←/→, sem Ctrl): página anterior/próxima (Ctrl+←/→
 #   reserva para capítulos); PageUp/PageDown continuam funcionando;
 # - **Ctrl+= / Ctrl+- / Ctrl+0**: zoom de fonte (canal hash → bridge).
-# Zoom por roda: **Ctrl+roda é consumido no QML** (MouseWheelHandler da
-# view → bridge.zoomIn/zoomOut, o mesmo zoom de Ctrl+=/-) ANTES do Chromium
-# (zoom nativo de página) e ANTES desta <script> — aqui o handler da roda
-# apenas IGNORA eventos com Ctrl/Meta (proteção de fundo): roda simples
-# pagina, Ctrl+roda só faz zoom; os dois atalhos nunca disparam juntos.
+# Ctrl+roda não tem função no PyPub (o zoom é só por teclado): o handler
+# da roda IGNORA eventos com Ctrl/Meta (preventDefault + return) — isso
+# também suprime o zoom nativo de página do Chromium; só a roda simples
+# pagina.
 # Cada troca (go()) também AVISA o QML pelo fragmento da URL
 # (#pypub:cmd:page:N → onUrlChanged → refreshPageInfo): assim o contador
 # "p. N/M" do rodapé segue a leitura em tempo real — inclusive nas trocas
@@ -321,10 +320,9 @@ _PAGE_JS = """
     }
     window.addEventListener("wheel", function (e) {
       if (!e) return;
-      // Ctrl/Cmd+roda é GESTO DE ZOOM (fonte) — tratado no QML (view), onde é
-      // consumido antes do Chromium. Se um evento Ctrl+roda chegar até aqui
-      // (qualquer caminho que pule o handler da view), NÃO toca na página:
-      // só a roda simples pagina.
+      // Ctrl/Cmd+roda não tem função no PyPub (zoom é só Ctrl+=/-/0):
+      // preventDefault suprime o zoom nativo do Chromium e o return impede
+      // a paginação — só a roda simples pagina.
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         e.stopPropagation();

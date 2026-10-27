@@ -636,6 +636,28 @@ def test_qml(app):
         f"total de capítulos no rodapé ({m.group(2)}) != bridge ({int(bridge.chapterCount)})"  # type: ignore[call-arg]
     )
 
+    # --- Marcador de ZOOM no rodapé (canto inferior direito, à direita do
+    # --- "p. N/M") — único indicador de % do rodapé, formato "100%" ---
+    zoom_label = win.findChild(QQuickItem, "zoomLabel")
+    assert zoom_label is not None, "marcador de zoom não encontrado no rodapé"
+    zt = str(zoom_label.property("text") or "")
+    mz = _re.match(r"^(\d+)%$", zt)
+    assert mz, f"marcador de zoom com formato inesperado (esperado 'N%'): {zt!r}"
+    assert int(mz.group(1)) == int(round(float(bridge.zoom) * 100)), (  # type: ignore[call-arg]
+        f"% no rodapé ({mz.group(1)}) != bridge ({float(bridge.zoom) * 100})"  # type: ignore[call-arg]
+    )
+    # posição: à direita do marcador de páginas e à direita do de capítulo
+    page_label = win.findChild(QQuickItem, "pageLabel")
+    assert page_label is not None, "marcador de página não encontrado no rodapé"
+    z_x = float(zoom_label.property("x") or 0.0)
+    p_x = float(page_label.property("x") or 0.0)
+    p_w = float(page_label.property("width") or 0.0)
+    c_x = float(chap_label.property("x") or 0.0)
+    assert z_x > p_x + p_w, (
+        f"marcador de zoom ({z_x}) não está à direita do 'p. N/M' ({p_x}+{p_w})")
+    assert z_x > c_x, "marcador de zoom não é o mais à direita do rodapé"
+    print("OK marcador de zoom (rodapé, '100%', à direita de 'p. N/M')")
+
     # funções de página da UI (invocadas também pelos atalhos de janela)
     from PySide6.QtCore import QMetaObject, Qt
 
@@ -814,14 +836,11 @@ def test_qml(app):
     else:
         print("OK roda precisa (pulada: capítulo curto, < 4 páginas)")
 
-    # --- Ctrl+roda = ZOOM (fonte) e NUNCA troca de página ---
-    # Os dois atalhos (página vs. zoom) não podem disparar juntos:
-    # • na VIEW, o event filter da bridge (attachWheelGuard) consome o
-    #   Ctrl+wheel ANTES do Chromium (zoom nativo de página) e ANTES da
-    #   <script> da página, convertendo-o no zoom de fonte do app;
-    # • no DOCUMENTO, o handler da roda ignora eventos com Ctrl/Meta
-    #   (proteção de fundo, qualquer caminho que pule o filter).
-    # Validado na página 1 (onde a re-layout do zoom não pode "andar").
+    # --- Ctrl+roda é intencionalmente IGNORADO (zoom é só Ctrl+=/-/0) ---
+    # Não há atalho de roda para zoom: o handler da roda no DOCUMENTO ignora
+    # eventos com Ctrl/Meta (preventDefault + return) — nem pagina, nem
+    # dispara o zoom nativo de página do Chromium. O zoom de fonte continua
+    # acessível por Ctrl+= / Ctrl+- / Ctrl+0 (testado logo abaixo).
     from PySide6.QtCore import QPoint, QPointF  # noqa: F811 (já importado acima)
     from PySide6.QtGui import QWheelEvent  # noqa: F811
 
@@ -841,25 +860,19 @@ def test_qml(app):
     time.sleep(0.3)
     app.processEvents()
 
-    ctrl_wheel(-120)   # ↑ → zoom in
+    ctrl_wheel(-120)   # ↑: não deve zoomar (zoom é só por Ctrl+=/-/0)
     z = float(bridge.zoom)  # type: ignore[call-arg]
-    assert abs(z - 1.1) < 1e-6, f"Ctrl+roda (cima) não aplicou zoom in (zoom={bridge.zoom})"
+    assert abs(z - 1.0) < 1e-6, f"Ctrl+roda (cima) não deveria zoomar (zoom={bridge.zoom})"
     assert (win.property("currentPage") or 0) == 1, \
-        f"Ctrl+roda (cima) também trocou de página (p.{win.property('currentPage')})"
+        f"Ctrl+roda (cima) trocou de página (p.{win.property('currentPage')})"
 
-    ctrl_wheel(-120)   # ↑ de novo → zoom in de novo
+    ctrl_wheel(+120)   # ↓: também não deve zoomar
     z = float(bridge.zoom)  # type: ignore[call-arg]
-    assert abs(z - 1.2) < 1e-6, f"2º Ctrl+roda (cima) não aplicou zoom (zoom={bridge.zoom})"
+    assert abs(z - 1.0) < 1e-6, f"Ctrl+roda (baixo) não deveria zoomar (zoom={bridge.zoom})"
     assert (win.property("currentPage") or 0) == 1, \
-        "Ctrl+roda também andou a página (zoom in)"
+        f"Ctrl+roda (baixo) trocou de página (p.{win.property('currentPage')})"
 
-    ctrl_wheel(+120)   # ↓ → zoom out (volta)
-    z = float(bridge.zoom)  # type: ignore[call-arg]
-    assert abs(z - 1.1) < 1e-6, f"Ctrl+roda (baixo) não aplicou zoom out (zoom={bridge.zoom})"
-    assert (win.property("currentPage") or 0) == 1, \
-        "Ctrl+roda também andou a página (zoom out)"
-
-    # proteção de fundo no documento: Ctrl+wheel que CHEGUE à página não pagina
+    # no documento: Ctrl+wheel que chegue à página não pagina
     page_js("pypub_goToPage(1)")
     time.sleep(0.3)
     app.processEvents()
@@ -871,7 +884,7 @@ def test_qml(app):
         f"Ctrl+roda no documento trocou de página (p.{ti['current']})"
 
     bridge.resetZoom()
-    print("OK Ctrl+roda = zoom (1.0→1.1→1.2→1.1) sem trocar de página; doc Ctrl+wheel não pagina")
+    print("OK Ctrl+roda é ignorado (nem zoom, nem página); zoom só por Ctrl+=/-/0")
 
     # --- Canal JS→Python via fragmento de URL (Ctrl+→ no documento) ---
     # O QWebChannel não funciona neste wheel do PySide6 (tipo QML quebrado;

@@ -147,6 +147,7 @@ K.ApplicationWindow {
         contentItem: WebEngineView {
             id: reader
             objectName: "reader"
+
                     // A página NUNCA escala: o zoom age SOMENTE sobre a fonte
                     // (18px * z) via pypub_setZoom (applyZoomToPage, acima);
                     // o enquadramento é fixo (1 coluna) — não sobre a view.
@@ -156,8 +157,10 @@ K.ApplicationWindow {
                     // loadHtml é instável para HTML grande no Qt 6.12 e a view
                     // não expõe load().
                     Component.onCompleted: {
-                        if (bridge && bridge.contentUrl().length > 0)
-                            reader.url = Qt.url(bridge.contentUrl())
+                        if (bridge) {
+                            if (bridge.contentUrl().length > 0)
+                                reader.url = Qt.url(bridge.contentUrl())
+                        }
                     }
                     // este build não expõe loadFinished(); usa a propriedade loading
                     onLoadingChanged: {
@@ -223,10 +226,10 @@ K.ApplicationWindow {
                     id: statusLabel
                     anchors.verticalCenter: parent.verticalCenter
                     // larga o espaço exato dos indicadores da direita
-                    // (cap. + p. + zoom, com seus espaçamentos)
+                    // (cap. + p. + zoom, com seus 3 espaçamentos — 4 itens, 3 gaps)
                     width: Math.max(0, statusRow.width
                         - (chapterLabel.visible ? chapterLabel.width + statusRow.spacing : 0)
-                        - pageLabel.width - zoomLabel.width - 2 * statusRow.spacing)
+                        - pageLabel.width - zoomLabel.width - 3 * statusRow.spacing)
                     elide: Text.ElideRight
                     text: window.hasBook
                         ? qsTr("Capítulo %1 de %2 — %3").arg(window.currentIndex + 1).arg(window.chapterCount).arg(window.currentChapterTitle)
@@ -252,14 +255,20 @@ K.ApplicationWindow {
                 }
                 Label {
                     id: pageLabel
+                    objectName: "pageLabel"
                     anchors.verticalCenter: parent.verticalCenter
                     visible: window.hasBook
                     text: qsTr("p. %1/%2").arg(window.currentPage).arg(window.pageCount)
                 }
+                // Marcador de ZOOM: canto inferior direito, ao lado direito
+                // do marcador de páginas ("p. N/M") — é o único indicador de
+                // porcentagem do rodapé (substitui o antigo "100 %"), então
+                // o usuário vê na hora o zoom de fonte atual.
                 Label {
                     id: zoomLabel
+                    objectName: "zoomLabel"
                     anchors.verticalCenter: parent.verticalCenter
-                    text: Math.round(window.zoom * 100) + " %"
+                    text: Math.round(window.zoom * 100) + "%"
                 }
             }
         }

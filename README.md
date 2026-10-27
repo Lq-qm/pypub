@@ -56,9 +56,9 @@ título;
   **1 coluna**); o zoom muda **somente o tamanho da fonte** (`18px × z`, via
   variável CSS `--pypub-zoom`), tanto para **zoom+** quanto para **zoom-**.
   **Sem recarga** — a posição de leitura é preservada. Controles: `Ctrl+=`
-  / `Ctrl+-` / `Ctrl+0` na página, **`Ctrl+roda`** (zoom in/out, consumido
-  antes do Chromium e da paginação) e a bridge
-  (`zoomIn`/`zoomOut`/`resetZoom`);
+  / `Ctrl+-` / `Ctrl+0` na página e a bridge
+  (`zoomIn`/`zoomOut`/`resetZoom`); **`Ctrl+roda` não tem função** (o
+  handler da roda da página o ignora — nem zoom, nem paginação);
 - **Tema segue o sistema** — modo claro/escuro do SO (a `KColorScheme` do
   Plasma; re-renderiza ao vivo se o tema do OS mudar com o app aberto);
   a tipografia do próprio livro vale (se ele declarar fonte), senão Noto
@@ -67,13 +67,12 @@ título;
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `←` / `→` (páginas),
   `Ctrl+←` / `Ctrl+→` (capítulos), `PageUp` / `PageDown` (páginas),
-  `Ctrl+=` / `Ctrl+-` / `Ctrl+0` **e `Ctrl+roda`** (zoom) — funcionam com a
+  `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom) — funcionam com a
   view focada (tratados no próprio documento) e sem foco (atalhos de
-  janela); **roda simples e Ctrl+roda são gestos excludentes**: a roda
-  simples pagina (no documento) e o Ctrl+roda só faz zoom — um event filter
-  da bridge consome o Ctrl+wheel na view antes do Chromium (zoom nativo de
-  página) e antes da `<script>` da página (troca de página), e o handler da
-  roda da página ignora qualquer evento com Ctrl/Meta (proteção de fundo);
+  janela); **a roda simples pagina** (no documento) e **Ctrl+roda não tem
+  função** — o handler da roda da página ignora qualquer evento com
+  Ctrl/Meta (preventDefault), o que também suprime o zoom nativo de página
+  do Chromium;
 - **Interface enxuta** — sem toolbar, sem sumário, sem botões de
   navegação/zoom: abrir é `Ctrl+O` (ou `pypub livro.epub`); navegação é por
   atalhos/gestos (capítulo `Ctrl+←/→`, página roda/setas). A janela é só
@@ -143,15 +142,15 @@ pypub livro.epub
   (navegação unificada, como em leitor de documento). A posição exata fica
   no rodapé: “cap. N/M” + “p. N/M”
   (o capítulo do livro e a página dentro dele);
-- **Zoom**: `Ctrl+=` / `Ctrl+-` **e `Ctrl+roda`** (ou a API
-  `zoomIn`/`zoomOut` da bridge); `Ctrl+0` / `resetZoom` volta a 100%.
+- **Zoom**: `Ctrl+=` / `Ctrl+-` (ou a API `zoomIn`/`zoomOut` da
+  bridge); `Ctrl+0` / `resetZoom` volta a 100%.
   O **enquadramento é fixo** (sempre **1 coluna**): o zoom muda
   **somente o tamanho da fonte** (até 250%; mínimo 60%), tanto para
   **zoom+** quanto para **zoom-**. A página **nunca é escalada** — o
-  enquadramento e a posição de leitura são preservados. `Ctrl+roda` é
-  **exclusivo de zoom**: o event filter da bridge o consome na view antes
-  do Chromium (zoom nativo de página) e antes da paginação do documento —
-  roda simples pagina, Ctrl+roda só faz zoom, nunca os dois juntos;
+  enquadramento e a posição de leitura são preservados. **Ctrl+roda não
+  tem função** (o zoom é só por teclado): a roda simples pagina, e o
+  handler da roda ignora eventos com Ctrl/Meta (o que também suprime o
+  zoom nativo do Chromium);
 - **Tema**: segue o **sistema operacional** (sem alternância manual) — se
   o tema do Plasma (Breeze/BreezeDark) mudar com o app aberto, o capítulo é
   re-renderizado na hora.
@@ -170,9 +169,10 @@ pypub livro.epub
 │  │   • zoom: pypub_setZoom(z) no documento (só a fonte; quadro fixo) │
 │  ├── atalhos: Shortcut de janela (view sem foco) + keydown na página │
 │  │   • roda do mouse + setas ←/→ → pypub_nextPage/prevPage          │
-│  │   • Ctrl+roda → bridge.attachWheelGuard (event filter na view):    │
-│  │     consome ANTES do Chromium e da paginação → zoomIn/zoomOut     │
-│  └── rodapé: status + “cap. N/M” + “p. N/M” + % zoom                │
+│  │   • Ctrl+roda → sem função (handler da página ignora Ctrl/Meta)   │
+│  │     zoom é só Ctrl+=/-/0; roda simples pagina                    │
+│  └── rodapé: status + “cap. N/M” + “p. N/M” + marcador de zoom     │
+│        (canto inferior direito, “100%”, à direita do “p. N/M”)     │
 └───────────────▲──────────────────────────────────────────────────────┘
                 │ context property "bridge"
 ┌───────────────┴──────────────────────────────────────────────────────┐
@@ -180,8 +180,7 @@ pypub livro.epub
 │  • estado: hasBook, bookTitle, chapterCount, currentIndex, zoom,     │
 │            columnCount, chaptersJson, dark, lastError                │
 │  • ações: openFile, closeBook, chooseFile, previous, next, goTo,     │
-│           zoomIn/Out, resetZoom, contentUrl, shutdown,               │
-│           attachWheelGuard (Ctrl+roda → zoom; ver acima)             │
+│           zoomIn/Out, resetZoom, contentUrl, shutdown                │
 │  • tema: dark segue o OS (QStyleHints.colorScheme) + sinal ao vivo   │
 │  • sinais: bookChanged, positionChanged, zoomChanged, darkChanged,   │
 │            errorChanged, contentChanged(url)                         │
@@ -346,9 +345,9 @@ valida, sem abrir display:
    o gesto avança para o próximo — página 1 —; no topo, volta ao anterior;
    as teclas de página têm a mesma semântica), **roda precisa** (flick de
    2 dentes = 2 páginas; 2× meia página = 1 página — avanço proporcional),
-   **Ctrl+roda = zoom e nunca página** (1.0→1.1→1.2→1.1 via event filter na
-   view, com a página imóvel; e Ctrl+wheel que chegue ao documento não
-   pagina), o **canal JS→Python**
+   **Ctrl+roda é ignorado** (nem zoom, nem página: o handler da roda no
+   documento ignora Ctrl/Meta — o zoom é só `Ctrl+=`/`Ctrl+-`/`Ctrl+0`),
+   o **canal JS→Python**
    (`Ctrl+→` no documento → fragmento de URL → `bridge.next()`, esperando o
    capítulo novo carregar antes do próximo passo) e o **zoom via teclado**
    (`Ctrl+=` →
