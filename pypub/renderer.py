@@ -38,10 +38,7 @@ body, body[class] {
        :root (valor inicial, conforme a bridge) e atualizado em runtime por
        pypub_setZoom() — sem recarregar a página (posição de leitura intacta) */
     font-size: calc(18px * var(--pypub-zoom, 1));
-    /* Espaçamento entre linhas dirigido por --pypub-ls (1.0 = base do leitor
-       1.75): definido em :root (conforme a bridge) e atualizado em runtime
-       por pypub_setLS() — sem recarregar a página (posição de leitura intacta) */
-    line-height: calc(1.75 * var(--pypub-ls, 1));
+    line-height: 1.75;
     max-width: 44em;  /* enquadramento fixo (1 coluna) — o zoom muda só a fonte */
     /* UMA PÁGINA POR VEZ: o body é o clip do conteúdo — tem exatamente a
        altura do viewport e corta o excedente (sem barra de rolagem, sem
@@ -54,8 +51,7 @@ body, body[class] {
 }
 body {
     /* Fonte base do leitor (fallback — se o EPUB declarar a própria tipografia,
-       ela vale; Noto Sans é a família de reserva). O line-height fica na
-       regra acima (1.75 × --pypub-ls). */
+       ela vale; Noto Sans é a família de reserva). */
     text-align: justify;
     -webkit-hyphens: auto;
     hyphens: auto;
@@ -152,9 +148,7 @@ def empty_html(dark: bool = False) -> str:
 # - **setas do teclado** (←/→, sem Ctrl): página anterior/próxima (Ctrl+←/→
 #   reserva para capítulos); PageUp/PageDown continuam funcionando;
 # - **Ctrl+= / Ctrl+- / Ctrl+0**: zoom de fonte (canal hash → bridge).
-# - **Ctrl+Shift+ / Ctrl+Shift-**: espaçamento entre linhas (canal hash
-#   → bridge).
-# Ctrl+roda não tem função no PyPub (zoom/espaçamento são só por teclado):
+# Ctrl+roda não tem função no PyPub (zoom é só por teclado):
 # o handler
 # da roda IGNORA eventos com Ctrl/Meta (preventDefault + return) — isso
 # também suprime o zoom nativo de página do Chromium; só a roda simples
@@ -280,9 +274,6 @@ _PAGE_JS = """
   function zoomIn() { cmd("zoomin"); }
   function zoomOut() { cmd("zoomout"); }
   function zoomReset() { cmd("zoomreset"); }
-  // espaçamento entre linhas (Ctrl+Shift+ / Ctrl+Shift-): canal hash → bridge
-  function lsIn() { cmd("lsin"); }
-  function lsOut() { cmd("lsout"); }
 
   // Zoom: a página NUNCA escala (o zoomFactor da view fica 1.0); o
   // enquadramento é FIXO (sempre 1 coluna) e muda SOMENTE o tamanho da fonte
@@ -295,19 +286,6 @@ _PAGE_JS = """
     var de = document.documentElement;
     if (!de) return false;
     de.style.setProperty("--pypub-zoom", String(z));
-    return true;
-  }
-
-  // Espaçamento entre linhas: a página NUNCA escala; o fator multiplica a
-  // base do leitor (1.75) via --pypub-ls. Faixa 0.8–2.0 (mesma lógica do
-  // zoom, aplicada ao line-height em vez do tamanho da fonte).
-  function setLS(f) {
-    f = Number(f);
-    if (!(f > 0)) f = 1;
-    f = Math.max(0.8, Math.min(2.0, f));
-    var de = document.documentElement;
-    if (!de) return false;
-    de.style.setProperty("--pypub-ls", String(f));
     return true;
   }
 
@@ -368,8 +346,8 @@ _PAGE_JS = """
     }
     window.addEventListener("wheel", function (e) {
       if (!e) return;
-      // Ctrl/Cmd+roda não tem função no PyPub (zoom/espaçamento são só
-      // por teclado: Ctrl+=/-/0 zoom, Ctrl+Shift+/Ctrl+Shift- espaçamento):
+      // Ctrl/Cmd+roda não tem função no PyPub (zoom é só por teclado:
+      // Ctrl+=/-/0):
       // preventDefault suprime o zoom nativo do Chromium e o return impede
       // a paginação — só a roda simples pagina.
       if (e.ctrlKey || e.metaKey) {
@@ -439,16 +417,8 @@ _PAGE_JS = """
           zoomIn();
           e.preventDefault(); e.stopPropagation();
         } else if (k === "-") {
-          // tecla "-" (sem Shift) → zoom OUT (tamanho da fonte)
+          // tecla "-" → zoom OUT (tamanho da fonte)
           zoomOut();
-          e.preventDefault(); e.stopPropagation();
-        } else if (k === "+") {
-          // tecla "+" (Shift+=) → ESPAÇAMENTO + (Ctrl+Shift+)
-          lsIn();
-          e.preventDefault(); e.stopPropagation();
-        } else if (k === "_") {
-          // Shift+- → ESPAÇAMENTO − (Ctrl+Shift-)
-          lsOut();
           e.preventDefault(); e.stopPropagation();
         } else if (k === "0") {
           zoomReset();
@@ -468,17 +438,8 @@ _PAGE_JS = """
   window.pypub_prevPage = prevPage;
   // zoom: aplica fonte + enquadramento sem recarga (ver setZoom acima)
   window.pypub_setZoom = setZoom;
-  // espaçamento entre linhas: aplica o fator (Ctrl+Shift+/Ctrl+Shift-) sem recarga
-  window.pypub_setLS = setLS;
   // fonte: aplica a família escolhida (Ctrl+1..4) sem recarga
   window.pypub_setFontIndex = setFontIndex;
-  // diagnóstico/teste: o espaçamento efetivamente aplicado no documento
-  window.pypub_lsInfo = function () {
-    var v = getComputedStyle(document.documentElement).getPropertyValue("--pypub-ls");
-    var f = parseFloat(v);
-    if (!(f > 0)) f = 1;
-    return { factor: f };
-  };
   // diagnóstico/teste: a fonte efetivamente aplicada no documento
   window.pypub_fontInfo = function () {
     var b = document.body;
@@ -620,12 +581,10 @@ def inline_local_resources(html: str, chapter_path: str, epub: Epub) -> str:
 
 
 # --------------------------------------------------------------------- injeção
-def inject_css(html: str, dark: bool = False, zoom: float = 1.0,
-               line_height: float = 1.0) -> str:
-    """Injeta o CSS do leitor (tema + zoom + espaçamento iniciais) no capítulo."""
+def inject_css(html: str, dark: bool = False, zoom: float = 1.0) -> str:
+    """Injeta o CSS do leitor (tema + zoom inicial) no capítulo."""
     zoom_rule = f":root {{ --pypub-zoom: {zoom:g}; }}"
-    ls_rule = f":root {{ --pypub-ls: {line_height:g}; }}"
-    style = f"<style>{_BASE_CSS}{zoom_rule}{ls_rule}{theme_css(dark)}</style>"
+    style = f"<style>{_BASE_CSS}{zoom_rule}{theme_css(dark)}</style>"
     m = re.search(r"</head\s*>", html, re.IGNORECASE)
     if m:
         return html[: m.start()] + style + html[m.start() :]
@@ -655,16 +614,14 @@ def prepare_chapter(
     epub: Epub,
     dark: bool = False,
     zoom: float = 1.0,
-    line_height: float = 1.0,
 ) -> str:
     """Prepara o HTML do capítulo: recursos inline + CSS do leitor + paginação.
 
     O tema SEGUe o sistema operacional (``dark`` = modo escuro do OS);
-    ``zoom`` fixa o estado INICIAL da fonte (enquadramento fixo em 1 coluna)
-    e ``line_height`` o espaçamento inicial entre linhas (base 1.75 × fator);
-    os ajustes em runtime são feitos por ``pypub_setZoom``/``pypub_setLS``
+    ``zoom`` fixa o estado INICIAL da fonte (enquadramento fixo em 1 coluna);
+    os ajustes em runtime são feitos por ``pypub_setZoom``
     no documento, sem recarga.
     """
     html = inline_local_resources(raw_html, chapter_path, epub)
-    html = inject_css(html, dark, zoom, line_height)
+    html = inject_css(html, dark, zoom)
     return inject_page_js(html)
