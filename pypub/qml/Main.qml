@@ -25,6 +25,7 @@ K.ApplicationWindow {
     property string lastError: bridge ? bridge.lastError : ""
     property real zoom: bridge ? bridge.zoom : 1.0
     property int fontIndex: bridge ? bridge.fontIndex : 0
+    property real lineHeight: bridge ? bridge.lineHeight : 1.0
 
     title: hasBook ? (bookTitle + " — PyPub") : "PyPub"
 
@@ -73,6 +74,17 @@ K.ApplicationWindow {
         var i = window.fontIndex | 0
         reader.runJavaScript(
             "typeof pypub_setFontIndex === 'function' ? pypub_setFontIndex(" + i + ") : false",
+            function(ok) { if (ok) window.refreshPageInfo() })
+    }
+
+    // Espaçamento entre linhas (Ctrl+/Ctrl-): aplica o fator ao documento
+    // JÁ CARREGADO sem recarregar (pypub_setLS multiplica a base 1.75 via
+    // --pypub-ls). O re-embalinhamento muda o nº de páginas → reavaliamos.
+    function applyLineHeightToPage() {
+        if (!window.hasBook) return
+        var f = Number(window.lineHeight)
+        reader.runJavaScript(
+            "typeof pypub_setLS === 'function' ? pypub_setLS(" + f + ") : false",
             function(ok) { if (ok) window.refreshPageInfo() })
     }
 
@@ -183,6 +195,7 @@ K.ApplicationWindow {
                             // zoom/fonte mudando no load)
                             window.applyZoomToPage()
                             window.applyFontToPage()
+                            window.applyLineHeightToPage()
                             window.startPageInfoPolling()
                         }
                     }
@@ -219,6 +232,10 @@ K.ApplicationWindow {
                                 bridge ? bridge.setFontIndex(2) : undefined
                             } else if (action === "font4") {
                                 bridge ? bridge.setFontIndex(3) : undefined
+                            } else if (action === "lsin") {
+                                bridge ? bridge.lineIn() : undefined
+                            } else if (action === "lsout") {
+                                bridge ? bridge.lineOut() : undefined
                             } else if (action.indexOf("page") === 0) {
                                 // Troca de página DENTRO da página (roda do mouse /
                                 // setas com foco): a página já andou (go()); aqui o QML
@@ -305,6 +322,10 @@ K.ApplicationWindow {
         function onFontChanged() {
             window.applyFontToPage()
         }
+        // espaçamento: aplica o fator ao documento sem recarga
+        function onLineHeightChanged() {
+            window.applyLineHeightToPage()
+        }
     }
 
     // Atalhos de teclado.
@@ -314,10 +335,12 @@ K.ApplicationWindow {
     // - com a view focada (estado normal de leitura), o keydown é tratado no
     //   <script> da própria página (renderer._PAGE_JS): setas ←/→ e
     //   PageUp/PageDown navegam a página; Ctrl+←/→ escrevem #pypub:cmd:<nome>
-    //   na URL (lido pelo onUrlChanged da view, acima); Ctrl+=/-/0 é zoom;
-    //   Ctrl+1..4 troca a fonte (padrão/serif/sans/mono);
+    //   na URL (lido pelo onUrlChanged da view, acima); Ctrl+=/Ctrl+0 é zoom
+    //   (in/reset; o out segue na API); Ctrl+/Ctrl- ajusta o espaçamento
+    //   entre linhas; Ctrl+1..4 troca a fonte (padrão/serif/sans/mono);
     // - com a view sem foco, estes Shortcut de janela disparam a mesma API
-    //   (setas ←/→ = página; Ctrl+←/→ = capítulo; Ctrl+1..4 = fonte).
+    //   (setas ←/→ = página; Ctrl+←/→ = capítulo; Ctrl+1..4 = fonte;
+    //   Ctrl+/Ctrl- = espaçamento).
     // A troca de página pela RODA do mouse é tratada só no <script> da página
     // (evento wheel da view → documento). Ctrl+O abre arquivo (só faz
     // sentido fora da página).
@@ -377,5 +400,19 @@ K.ApplicationWindow {
         sequences: ["Ctrl+4"]
         enabled: !reader.activeFocus && window.hasBook
         onActivated: bridge ? bridge.setFontIndex(3) : undefined
+    }
+    // Espaçamento entre linhas (Ctrl+/Ctrl-): a tecla "+" (Shift+= — a
+    // própria tecla do "+") aumenta; a tecla "-" diminui. (O zoom in
+    // continua em Ctrl+= e o reset em Ctrl+0; o zoom out segue na API —
+    // a tecla "Ctrl-" agora é do espaçamento.)
+    Shortcut {
+        sequences: ["Ctrl+Shift+="]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.lineIn() : undefined
+    }
+    Shortcut {
+        sequences: ["Ctrl+-"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.lineOut() : undefined
     }
 }

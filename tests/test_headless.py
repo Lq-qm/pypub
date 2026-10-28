@@ -862,7 +862,7 @@ def test_qml(app):
         f"Ctrl+roda no documento trocou de página (p.{ti['current']})"
 
     bridge.resetZoom()
-    print("OK Ctrl+roda é ignorado (nem zoom, nem página); zoom só por Ctrl+=/-/0")
+    print("OK Ctrl+roda é ignorado (nem zoom, nem página); zoom in Ctrl+=, reset Ctrl+0, espaçamento Ctrl+/Ctrl-")
 
     # --- Canal JS→Python via fragmento de URL (Ctrl+→ no documento) ---
     # O QWebChannel não funciona neste wheel do PySide6 (tipo QML quebrado;
@@ -934,6 +934,36 @@ def test_qml(app):
     fi = json.loads(page_js("JSON.stringify(pypub_fontInfo())"))
     assert fi["family"] == "", f"Ctrl+1 deveria limpar a fonte inline: {fi!r}"
     print("OK fonte via teclado (Ctrl+2: serif no documento; Ctrl+1: volta ao padrão)")
+
+    # --- Espaçamento entre linhas via teclado (Ctrl+/Ctrl- no documento) ---
+    # Ctrl+ (tecla +) escreve #pypub:cmd:lsin; Ctrl- (tecla -) escreve
+    # #pypub:cmd:lsout; o onUrlChanged do QML chama bridge.lineIn()/lineOut();
+    # o onLineHeightChanged aplica pypub_setLS no documento (multiplica a base
+    # 1.75 por --pypub-ls; sem recarga). NB: a tecla Ctrl- migrou do zoom
+    # para o espaçamento (zoom in continua em Ctrl+= ; out segue na API).
+    l0 = float(bridge.lineHeight)  # type: ignore[call-arg]
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: '+', ctrlKey: true, bubbles: true}))")
+    t0 = time.time()
+    while abs(float(bridge.lineHeight) - l0) < 1e-9 and time.time() - t0 < 20:  # type: ignore[call-arg]
+        app.processEvents()
+        time.sleep(0.1)
+    l1 = float(bridge.lineHeight)  # type: ignore[call-arg]
+    assert l1 > l0, f"Ctrl+ não aumentou o espaçamento ({l0} -> {l1})"
+    li = json.loads(page_js("JSON.stringify(pypub_lsInfo())"))
+    assert abs(li["factor"] - l1) < 0.01, f"documento ({li['factor']}) != bridge ({l1})"
+    # Ctrl- → volta (a tecla "Ctrl-" agora é do espaçamento, não do zoom)
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: '-', ctrlKey: true, bubbles: true}))")
+    t0 = time.time()
+    while abs(float(bridge.lineHeight) - l1) < 1e-9 and time.time() - t0 < 20:  # type: ignore[call-arg]
+        app.processEvents()
+        time.sleep(0.1)
+    l2 = float(bridge.lineHeight)  # type: ignore[call-arg]
+    assert l2 < l1, f"Ctrl- não diminuiu o espaçamento ({l1} -> {l2})"
+    assert abs(l2 - l0) < 1e-6, f"espaçamento deveria voltar ao inicial ({l0} -> {l2})"
+    # a paginação continua funcionando com o novo espaçamento
+    ti3 = json.loads(page_js("JSON.stringify(pypub_info())"))
+    assert int(ti3["total"]) >= 2, f"paginação quebrou com o novo espaçamento: {ti3!r}"
+    print("OK espaçamento entre linhas (Ctrl+ :", l0, "→", l1, "; Ctrl- : volta à", l2, ")")
 
     print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title,
           "| indicador p.", win.property("currentPage"), "/", win.property("pageCount"), ")")

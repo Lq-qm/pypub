@@ -32,6 +32,12 @@ _ZOOM_STEP = 0.1
 #: 0 = padrão (a tipografia do próprio livro) ; 1 = serif ; 2 = sans ; 3 = mono.
 _FONTS = ("Padrão", "Serif", "Sans", "Mono")
 
+#: Espaçamento entre linhas (Ctrl+/Ctrl-): fator multiplicando a base do
+#: leitor (1.75). 0.8 = apertado (1.4) ; 1.0 = padrão (1.75) ; 2.0 = folgado (3.5).
+_LS_MIN = 0.8
+_LS_MAX = 2.0
+_LS_STEP = 0.1
+
 
 def _system_dark() -> bool:
     """Esquema de cor do **sistema operacional** (via tema de plataforma do Qt).
@@ -66,6 +72,7 @@ class EpubBridge(QObject):
     positionChanged = Signal()
     zoomChanged = Signal()
     fontChanged = Signal()
+    lineHeightChanged = Signal()
     darkChanged = Signal()
     errorChanged = Signal()
     #: emitido com o HTML pronto para renderização (incluindo estado vazio)
@@ -77,6 +84,7 @@ class EpubBridge(QObject):
         self._index = 0
         self._zoom = 1.0
         self._font_index = 0  # 0 = padrão (livro) ; 1 = serif ; 2 = sans ; 3 = mono
+        self._line_height = 1.0  # fator de espaçamento (1.0 = base do leitor)
         # tema de leitura: único, segue o **sistema** (claro/escuro)
         self._dark = _system_dark()
         self._last_error = ""
@@ -163,6 +171,11 @@ class EpubBridge(QObject):
     def fontCount(self) -> int:
         """Quantidade de fontes (Ctrl+1..4): padrão + serif + sans + mono."""
         return len(_FONTS)
+
+    @Property(float, notify=lineHeightChanged)
+    def lineHeight(self) -> float:
+        """Fator de espaçamento entre linhas (Ctrl+/Ctrl-; 1.0 = padrão, 0.8–2.0)."""
+        return self._line_height
 
     @Property(str, notify=bookChanged)
     def chaptersJson(self) -> str:
@@ -259,6 +272,7 @@ class EpubBridge(QObject):
             self._epub,
             dark=self._dark,
             zoom=self._zoom,
+            line_height=self._line_height,
         )
 
     @Slot(result=str)
@@ -287,6 +301,21 @@ class EpubBridge(QObject):
         self._font_index = index
         self.fontChanged.emit()
 
+    @Slot()
+    def lineIn(self) -> None:
+        """Aumenta o espaçamento entre linhas (Ctrl+)."""
+        self._set_line_height(self._line_height + _LS_STEP)
+
+    @Slot()
+    def lineOut(self) -> None:
+        """Diminui o espaçamento entre linhas (Ctrl-)."""
+        self._set_line_height(self._line_height - _LS_STEP)
+
+    @Slot()
+    def resetLine(self) -> None:
+        """Volta o espaçamento entre linhas ao padrão do leitor (1.0)."""
+        self._set_line_height(1.0)
+
     def _on_system_color_scheme(self) -> None:
         """O esquema do OS mudou → re-renderiza (o tema segue o sistema)."""
         value = _system_dark()
@@ -306,6 +335,16 @@ class EpubBridge(QObject):
             return
         self._zoom = value
         self.zoomChanged.emit()
+
+    def _set_line_height(self, value: float) -> None:
+        # A mudança chega ao documento via QML → pypub_setLS (só o
+        # line-height; sem recarga); o estado inicial de uma renderização
+        # nova já sai certo (currentHtml passa o fator).
+        value = max(_LS_MIN, min(_LS_MAX, round(value, 2)))
+        if abs(value - self._line_height) < 1e-9:
+            return
+        self._line_height = value
+        self.lineHeightChanged.emit()
 
     def _set_error(self, message: str) -> None:
         if message == self._last_error:

@@ -57,14 +57,19 @@ título;
   **1 coluna**); o zoom muda **somente o tamanho da fonte** (`18px × z`, via
   variável CSS `--pypub-zoom`), tanto para **zoom+** quanto para **zoom-**.
   **Sem recarga** — a posição de leitura é preservada. Controles: `Ctrl+=`
-  / `Ctrl+-` / `Ctrl+0` na página e a bridge
-  (`zoomIn`/`zoomOut`/`resetZoom`); **`Ctrl+roda` não tem função** (o
+  (in) / `Ctrl+0` (reset) na página e a bridge
+  (`zoomIn`/`zoomOut`/`resetZoom` — o out segue na API, pois a tecla `Ctrl-`
+  agora é do espaçamento entre linhas); **`Ctrl+roda` não tem função** (o
   handler da roda da página o ignora — nem zoom, nem paginação);
 - **Fonte do texto** (`Ctrl+1`–`Ctrl+4`): **1** = padrão (a tipografia do
   próprio livro), **2** = serifada, **3** = sem serifa, **4** =
   monoespaçada — aplicada ao `<body>` **sem recarga** (estilo inline, que
   vence a fonte do livro) e com a paginação reavaliada; a bridge expõe
   `fontIndex`/`fontCount`/`setFontIndex`;
+- **Espaçamento entre linhas** (`Ctrl+`/`Ctrl-`): aumenta/diminui o
+  line-height do texto (fator 0.8–2.0 sobre a base 1.75) — aplicado ao
+  documento **sem recarga** (variável CSS `--pypub-ls`) e com a paginação
+  reavaliada; a bridge expõe `lineHeight`/`lineIn`/`lineOut`/`resetLine`;
 - **Tema segue o sistema** — modo claro/escuro do SO (a `KColorScheme` do
   Plasma; re-renderiza ao vivo se o tema do OS mudar com o app aberto);
   a tipografia do próprio livro vale (se ele declarar fonte), senão Noto
@@ -73,7 +78,8 @@ título;
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `←` / `→` (páginas),
   `Ctrl+←` / `Ctrl+→` (capítulos), `PageUp` / `PageDown` (páginas),
-  `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom), `Ctrl+1`–`Ctrl+4` (fonte) —
+  `Ctrl+=` / `Ctrl+0` (zoom in/reset), `Ctrl+` / `Ctrl-` (espaçamento entre
+  linhas), `Ctrl+1`–`Ctrl+4` (fonte) —
   funcionam com a
   view focada (tratados no próprio documento) e sem foco (atalhos de
   janela); **a roda simples pagina** (no documento) e **Ctrl+roda não tem
@@ -150,8 +156,9 @@ pypub livro.epub
   (navegação unificada, como em leitor de documento). A posição exata fica
   no rodapé: “cap. N/M” + “p. N/M”
   (o capítulo do livro e a página dentro dele);
-- **Zoom**: `Ctrl+=` / `Ctrl+-` (ou a API `zoomIn`/`zoomOut` da
-  bridge); `Ctrl+0` / `resetZoom` volta a 100%.
+- **Zoom**: `Ctrl+=` (in) ou a API `zoomIn`/`zoomOut` da bridge (o out
+  segue na API — a tecla `Ctrl-` agora é do espaçamento entre linhas);
+  `Ctrl+0` / `resetZoom` volta a 100%.
   O **enquadramento é fixo** (sempre **1 coluna**): o zoom muda
   **somente o tamanho da fonte** (até 250%; mínimo 60%), tanto para
   **zoom+** quanto para **zoom-**. A página **nunca é escalada** — o
@@ -163,6 +170,9 @@ pypub livro.epub
   `Ctrl+3` sem serifa, `Ctrl+4` monoespaçada (ou `setFontIndex(0..3)` da
   bridge) — aplicada **sem recarga** (estilo inline no `<body>`); o zoom
   continua dirigindo somente o tamanho;
+- **Espaçamento entre linhas**: `Ctrl+` (aumenta) / `Ctrl-` (diminui) ou a
+  API `lineIn`/`lineOut` da bridge (`resetLine` volta a 1.0) — aplicado
+  **sem recarga** (o nº de páginas é reavaliado);
 - **Tema**: segue o **sistema operacional** (sem alternância manual) — se
   o tema do Plasma (Breeze/BreezeDark) mudar com o app aberto, o capítulo é
   re-renderizado na hora.
@@ -177,27 +187,30 @@ pypub livro.epub
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
 │  │   • paginação: pypub_info/nextPage/prevPage via runJavaScript     │
 │  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome>                │
-││  │     (páginas/capítulos na borda, Ctrl+←/→, zoom, fonte)           │
+││  │     (páginas/capítulos na borda, Ctrl+←/→, zoom, fonte, linha)    │
 │  │   • zoom: pypub_setZoom(z) no documento (só a fonte; quadro fixo) │
 │  │   • fonte: pypub_setFontIndex(i) no documento (Ctrl+1..4)         │
+│  │   • espaço: pypub_setLS(f) no documento (Ctrl+/Ctrl-)             │
 │  ├── atalhos: Shortcut de janela (view sem foco) + keydown na página │
 │  │   • roda do mouse + setas ←/→ → pypub_nextPage/prevPage          │
 │  │   • Ctrl+roda → sem função (handler da página ignora Ctrl/Meta)   │
-││  │     zoom é só Ctrl+=/-/0; roda simples pagina                     │
+││  │     zoom: Ctrl+=/Ctrl+0 (in/reset; out: API); roda pagina         │
 │  │   • Ctrl+1..4 → fonte (padrão/serif/sans/mono)                    │
+│  │   • Ctrl+/Ctrl- → espaçamento (line-height)                       │
 │  └── rodapé: status + “cap. N/M” + “p. N/M”                         │
 └───────────────▲──────────────────────────────────────────────────────┘
                 │ context property "bridge"
 ┌───────────────┴──────────────────────────────────────────────────────┐
 │  EpubBridge  (pypub/bridge.py)  — QObject com @Property/@Slot        │
 │  • estado: hasBook, bookTitle, chapterCount, currentIndex, zoom,     │
-│            fontIndex, columnCount, chaptersJson, dark, lastError     │
+│            fontIndex, lineHeight, columnCount, chaptersJson, dark,   │
 │  • ações: openFile, closeBook, chooseFile, previous, next, goTo,     │
-│           zoomIn/Out, resetZoom, setFontIndex, contentUrl,           │
-│           shutdown                                                   │
+│           zoomIn/Out, resetZoom, setFontIndex, lineIn/Out, resetLine,│
+│           contentUrl, shutdown                                       │
 │  • tema: dark segue o OS (QStyleHints.colorScheme) + sinal ao vivo   │
 │  • sinais: bookChanged, positionChanged, zoomChanged, fontChanged,   │
-│            darkChanged, errorChanged, contentChanged(url)            │
+│            lineHeightChanged, darkChanged, errorChanged,             │
+│            contentChanged(url)                                       │
 └───────────────▲──────────────────────────────────────────────────────┘
                 │
 ┌───────────────┴──────────────────────────────────────────────────────┐
@@ -258,6 +271,12 @@ fixo em 1 coluna).
   quanto para **zoom-**. Faixa clampada em 0.6–2.5 (60%–250%).
   `pypub_setZoom` aplica `--pypub-zoom` no documento (o enquadramento já é
   fixo); a posição de leitura (página atual) é preservada.
+  NB: a tecla `Ctrl-` migrou do zoom para o espaçamento entre linhas —
+  o zoom in é `Ctrl+=`, o reset `Ctrl+0` e o zoom out segue na API.
+- **Espaçamento entre linhas**: o line-height do corpo é `1.75 ×
+  var(--pypub-ls)` — `pypub_setLS` aplica o fator no documento
+  (`Ctrl+`/`Ctrl-`; fator clampado em 0.8–2.0); a posição de leitura é
+  preservada (sem recarga) e o nº de páginas é reavaliado.
 - **Centralização**: o bloco de leitura tem `max-width` (44em) e
   `margin: 0 auto` — em janelas largas, centralizado; em janelas estreitas,
   ocupa a largura com padding lateral de 32px.
@@ -296,12 +315,13 @@ fixo em 1 coluna).
   página — ~1 dente = 2 páginas; resto fracionário carrega dentro do gesto,
   janela de 500 ms), então rolar = trocar de página. As setas só navegam sem seleção de texto ativa (para não brigar com
   a seleção). O nº de páginas é reavaliado em redimensionamento e ao mudar o
-  zoom.
+  zoom ou o espaçamento entre linhas.
 - **Atalhos de teclado** — duas frentes complementares, sem página dupla:
   - com a **view focada** (estado normal de leitura), o `keydown` é tratado
     **no próprio documento** (o `<script>` injetado): `←`/`→` e
     `PageUp`/`PageDown` navegam a página; `Ctrl+←`/`Ctrl+→` escrevem a ação
-    no fragmento da URL; `Ctrl+=`/`Ctrl+-`/`Ctrl+0` ajustam o zoom;
+    no fragmento da URL; `Ctrl+=`/`Ctrl+0` ajustam o zoom (in/reset; o out
+    segue na API); `Ctrl+`/`Ctrl-` ajustam o espaçamento entre linhas;
     `Ctrl+1`–`Ctrl+4` trocam a fonte (padrão/serif/sans/mono);
   - com a **view sem foco**, os itens `Shortcut` de janela disparam
     (ficam inativos enquanto `reader.activeFocus` — `enabled: !reader.activeFocus`).
@@ -312,7 +332,7 @@ fixo em 1 coluna).
   `history.replaceState(null, "", "#pypub:cmd:<nome>")` (sem entrada no
   histórico) e o `onUrlChanged` do QML lê o fragmento, executa a ação
   (`bridge.next()`/`bridge.previous()`/`bridge.zoomIn()`/`zoomOut()`/
-  `resetZoom()`/`setFontIndex(0..3)`) e limpa o fragmento. NB: o `replaceState` só funciona no
+  `resetZoom()`/`setFontIndex(0..3)`/`lineIn()`/`lineOut()`) e limpa o fragmento. NB: o `replaceState` só funciona no
   **documento atual** da view — no documento antigo (navegação em curso) a
   URL da view já é a nova e o `urlChanged` não dispara.
 - **Quando o indicador é preenchido / atualizado**: a view termina o estado
@@ -361,7 +381,8 @@ valida, sem abrir display:
    as teclas de página têm a mesma semântica), **roda precisa** (flick de
    2 dentes = 4 páginas; 2× meia página = 1 página — avanço proporcional),
    **Ctrl+roda é ignorado** (nem zoom, nem página: o handler da roda no
-   documento ignora Ctrl/Meta — o zoom é só `Ctrl+=`/`Ctrl+-`/`Ctrl+0`),
+   documento ignora Ctrl/Meta — zoom in é `Ctrl+=`, reset `Ctrl+0`, out via
+   API; espaçamento é `Ctrl+`/`Ctrl-`),
    o **canal JS→Python**
    (`Ctrl+→` no documento → fragmento de URL → `bridge.next()`, esperando o
    capítulo novo carregar antes do próximo passo), o **zoom via teclado**
@@ -370,7 +391,10 @@ valida, sem abrir display:
    sem recarga) e a **fonte via teclado** (`Ctrl+2` →
    `bridge.setFontIndex(1)` → documento com fonte serifada no `<body>`;
    `Ctrl+1` → `setFontIndex(0)` → limpa o estilo inline e volta à
-   tipografia do livro). O final da suíte inclui um **settling** antes do teardown: com o
+   tipografia do livro) e o **espaçamento entre linhas via teclado**
+   (`Ctrl+` → `bridge.lineIn()` → maior line-height no documento; `Ctrl-` →
+   `bridge.lineOut()` → volta ao inicial — sem recarga). O final da suíte
+   inclui um **settling** antes do teardown: com o
    renderer ainda ocupado com a última navegação, a destruição dos objetos do
    WebEngine segfaulta no offscreen.
 
@@ -412,7 +436,7 @@ valida, sem abrir display:
 - `QWebEngineUrlSchemeHandler` (se/ quando exposto no PySide6) para servir
   recursos do EPUB por schema customizado em vez de inline `data:` URIs
   (menos memória em livros grandes);
-- Persistência (ex.: `QSettings` ou JSON) de posição/zoom;
+- Persistência (ex.: `QSettings` ou JSON) de posição/zoom/fonte/espaçamento;
 - Testes parametrizados (pytest) e CI com `QT_QPA_PLATFORM=offscreen`.
 
 ## Solução de problemas
