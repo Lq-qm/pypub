@@ -151,9 +151,9 @@ def empty_html(dark: bool = False) -> str:
 #   conteúdo não rola livre;
 # - **setas do teclado** (←/→, sem Ctrl): página anterior/próxima (Ctrl+←/→
 #   reserva para capítulos); PageUp/PageDown continuam funcionando;
-# - **Ctrl+= / Ctrl+0**: zoom de fonte (canal hash → bridge; o zoom out
-#   segue na API — a tecla `Ctrl-` migrou para o espaçamento);
-# - **Ctrl+ / Ctrl-**: espaçamento entre linhas (canal hash → bridge).
+# - **Ctrl+= / Ctrl+- / Ctrl+0**: zoom de fonte (canal hash → bridge).
+# - **Ctrl+Shift+ / Ctrl+Shift-**: espaçamento entre linhas (canal hash
+#   → bridge).
 # Ctrl+roda não tem função no PyPub (zoom/espaçamento são só por teclado):
 # o handler
 # da roda IGNORA eventos com Ctrl/Meta (preventDefault + return) — isso
@@ -280,7 +280,7 @@ _PAGE_JS = """
   function zoomIn() { cmd("zoomin"); }
   function zoomOut() { cmd("zoomout"); }
   function zoomReset() { cmd("zoomreset"); }
-  // espaçamento entre linhas (Ctrl+ / Ctrl-): canal hash → bridge
+  // espaçamento entre linhas (Ctrl+Shift+ / Ctrl+Shift-): canal hash → bridge
   function lsIn() { cmd("lsin"); }
   function lsOut() { cmd("lsout"); }
 
@@ -369,7 +369,7 @@ _PAGE_JS = """
     window.addEventListener("wheel", function (e) {
       if (!e) return;
       // Ctrl/Cmd+roda não tem função no PyPub (zoom/espaçamento são só
-      // por teclado: Ctrl+=/0 zoom, Ctrl+/Ctrl- espaçamento):
+      // por teclado: Ctrl+=/-/0 zoom, Ctrl+Shift+/Ctrl+Shift- espaçamento):
       // preventDefault suprime o zoom nativo do Chromium e o return impede
       // a paginação — só a roda simples pagina.
       if (e.ctrlKey || e.metaKey) {
@@ -435,16 +435,19 @@ _PAGE_JS = """
           prevChapter();
           e.preventDefault(); e.stopPropagation();
         } else if (k === "=") {
-          // tecla "=" (sem Shift) → zoom IN (tamanho da fonte)
+          // tecla "=" → zoom IN (tamanho da fonte)
           zoomIn();
           e.preventDefault(); e.stopPropagation();
-        } else if (k === "+" || k === "_") {
-          // tecla "+" (ou Shift+- no ABNT) → ESPAÇAMENTO +
+        } else if (k === "-") {
+          // tecla "-" (sem Shift) → zoom OUT (tamanho da fonte)
+          zoomOut();
+          e.preventDefault(); e.stopPropagation();
+        } else if (k === "+") {
+          // tecla "+" (Shift+=) → ESPAÇAMENTO + (Ctrl+Shift+)
           lsIn();
           e.preventDefault(); e.stopPropagation();
-        } else if (k === "-") {
-          // tecla "-" → ESPAÇAMENTO − (a tecla Ctrl- migrou do zoom para o
-          // espaçamento; o zoom out segue na API: bridge.zoomOut())
+        } else if (k === "_") {
+          // Shift+- → ESPAÇAMENTO − (Ctrl+Shift-)
           lsOut();
           e.preventDefault(); e.stopPropagation();
         } else if (k === "0") {
@@ -465,7 +468,7 @@ _PAGE_JS = """
   window.pypub_prevPage = prevPage;
   // zoom: aplica fonte + enquadramento sem recarga (ver setZoom acima)
   window.pypub_setZoom = setZoom;
-  // espaçamento entre linhas: aplica o fator (Ctrl+/Ctrl-) sem recarga
+  // espaçamento entre linhas: aplica o fator (Ctrl+Shift+/Ctrl+Shift-) sem recarga
   window.pypub_setLS = setLS;
   // fonte: aplica a família escolhida (Ctrl+1..4) sem recarga
   window.pypub_setFontIndex = setFontIndex;

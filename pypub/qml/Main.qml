@@ -77,7 +77,7 @@ K.ApplicationWindow {
             function(ok) { if (ok) window.refreshPageInfo() })
     }
 
-    // Espaçamento entre linhas (Ctrl+/Ctrl-): aplica o fator ao documento
+    // Espaçamento entre linhas (Ctrl+Shift+/Ctrl+Shift-): aplica o fator ao documento
     // JÁ CARREGADO sem recarregar (pypub_setLS multiplica a base 1.75 via
     // --pypub-ls). O re-embalinhamento muda o nº de páginas → reavaliamos.
     function applyLineHeightToPage() {
@@ -335,12 +335,12 @@ K.ApplicationWindow {
     // - com a view focada (estado normal de leitura), o keydown é tratado no
     //   <script> da própria página (renderer._PAGE_JS): setas ←/→ e
     //   PageUp/PageDown navegam a página; Ctrl+←/→ escrevem #pypub:cmd:<nome>
-    //   na URL (lido pelo onUrlChanged da view, acima); Ctrl+=/Ctrl+0 é zoom
-    //   (in/reset; o out segue na API); Ctrl+/Ctrl- ajusta o espaçamento
-    //   entre linhas; Ctrl+1..4 troca a fonte (padrão/serif/sans/mono);
+    //   na URL (lido pelo onUrlChanged da view, acima); Ctrl+=/-/0 é zoom;
+    //   Ctrl+Shift+/Ctrl+Shift- ajusta o espaçamento entre linhas;
+    //   Ctrl+1..4 troca a fonte (padrão/serif/sans/mono);
     // - com a view sem foco, estes Shortcut de janela disparam a mesma API
     //   (setas ←/→ = página; Ctrl+←/→ = capítulo; Ctrl+1..4 = fonte;
-    //   Ctrl+/Ctrl- = espaçamento).
+    //   Ctrl+Shift+/Ctrl+Shift- = espaçamento).
     // A troca de página pela RODA do mouse é tratada só no <script> da página
     // (evento wheel da view → documento). Ctrl+O abre arquivo (só faz
     // sentido fora da página).
@@ -401,17 +401,16 @@ K.ApplicationWindow {
         enabled: !reader.activeFocus && window.hasBook
         onActivated: bridge ? bridge.setFontIndex(3) : undefined
     }
-    // Espaçamento entre linhas (Ctrl+/Ctrl-): a tecla "+" (Shift+= — a
-    // própria tecla do "+") aumenta; a tecla "-" diminui. (O zoom in
-    // continua em Ctrl+= e o reset em Ctrl+0; o zoom out segue na API —
-    // a tecla "Ctrl-" agora é do espaçamento.)
+    // Espaçamento entre linhas (Ctrl+Shift+/Ctrl+Shift-): a tecla "+"
+    // (Shift+=) aumenta; a tecla "-" com Shift (Shift+-) diminui.
+    // (O zoom continua em Ctrl+= / Ctrl+- / Ctrl+0.)
     Shortcut {
         sequences: ["Ctrl+Shift+="]
         enabled: !reader.activeFocus && window.hasBook
         onActivated: bridge ? bridge.lineIn() : undefined
     }
     Shortcut {
-        sequences: ["Ctrl+-"]
+        sequences: ["Ctrl+Shift+-"]
         enabled: !reader.activeFocus && window.hasBook
         onActivated: bridge ? bridge.lineOut() : undefined
     }

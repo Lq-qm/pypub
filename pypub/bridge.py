@@ -32,7 +32,7 @@ _ZOOM_STEP = 0.1
 #: 0 = padrão (a tipografia do próprio livro) ; 1 = serif ; 2 = sans ; 3 = mono.
 _FONTS = ("Padrão", "Serif", "Sans", "Mono")
 
-#: Espaçamento entre linhas (Ctrl+/Ctrl-): fator multiplicando a base do
+#: Espaçamento entre linhas (Ctrl+Shift+/Ctrl+Shift-): fator multiplicando a base do
 #: leitor (1.75). 0.8 = apertado (1.4) ; 1.0 = padrão (1.75) ; 2.0 = folgado (3.5).
 _LS_MIN = 0.8
 _LS_MAX = 2.0
@@ -174,7 +174,7 @@ class EpubBridge(QObject):
 
     @Property(float, notify=lineHeightChanged)
     def lineHeight(self) -> float:
-        """Fator de espaçamento entre linhas (Ctrl+/Ctrl-; 1.0 = padrão, 0.8–2.0)."""
+        """Fator de espaçamento entre linhas (Ctrl+Shift+/Ctrl+Shift-; 1.0 = padrão, 0.8–2.0)."""
         return self._line_height
 
     @Property(str, notify=bookChanged)
@@ -303,12 +303,12 @@ class EpubBridge(QObject):
 
     @Slot()
     def lineIn(self) -> None:
-        """Aumenta o espaçamento entre linhas (Ctrl+)."""
+        """Aumenta o espaçamento entre linhas (Ctrl+Shift+)."""
         self._set_line_height(self._line_height + _LS_STEP)
 
     @Slot()
     def lineOut(self) -> None:
-        """Diminui o espaçamento entre linhas (Ctrl-)."""
+        """Diminui o espaçamento entre linhas (Ctrl+Shift-)."""
         self._set_line_height(self._line_height - _LS_STEP)
 
     @Slot()
