@@ -288,6 +288,30 @@ _PAGE_JS = """
     return true;
   }
 
+  // Fonte (Ctrl+1..4): troca a família da fonte do corpo SEM recarregar —
+  // estilo inline no <body> (vence o CSS do livro, que é o ponto da escolha
+  // explícita; o zoom continua dirigindo o TAMANHO via --pypub-zoom). O
+  // re-embalinhamento muda o nº de páginas → o QML reavalia (refreshPageInfo).
+  //   0 = padrão (a tipografia do próprio livro / fallback do leitor —
+  //       limpa o estilo inline e devolve o comportamento original)
+  //   1 = serifada (leitura)   2 = sans   3 = monoespaçada
+  var FONTS = [
+    null,
+    '"Bitstream Charter", "Liberation Serif", "DejaVu Serif", "Noto Serif", serif',
+    '"Cantarell", "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif',
+    '"DejaVu Sans Mono", "Liberation Mono", monospace'
+  ];
+  function setFontIndex(i) {
+    i = Math.floor(Number(i));
+    if (!(i >= 0) || i >= FONTS.length) return false;
+    var b = document.body;
+    if (!b) return false;
+    var f = FONTS[i];
+    if (f) b.style.setProperty("font-family", f);
+    else b.style.removeProperty("font-family");
+    return true;
+  }
+
   if (window.addEventListener) {
     // Guarda de segurança: o usuário NÃO rola livre (body é o clip), mas
     // qualquer deslocamento do clip que ande "à frente" do state é seguido.
@@ -395,6 +419,10 @@ _PAGE_JS = """
         } else if (k === "0") {
           zoomReset();
           e.preventDefault(); e.stopPropagation();
+        } else if (k >= "1" && k <= "4") {
+          // fonte (Ctrl+1..4): padrão / serif / sans / mono
+          cmd("font" + k);
+          e.preventDefault(); e.stopPropagation();
         }
       }
     }, true);
@@ -406,6 +434,16 @@ _PAGE_JS = """
   window.pypub_prevPage = prevPage;
   // zoom: aplica fonte + enquadramento sem recarga (ver setZoom acima)
   window.pypub_setZoom = setZoom;
+  // fonte: aplica a família escolhida (Ctrl+1..4) sem recarga
+  window.pypub_setFontIndex = setFontIndex;
+  // diagnóstico/teste: a fonte efetivamente aplicada no documento
+  window.pypub_fontInfo = function () {
+    var b = document.body;
+    return {
+      family: b ? (b.style.fontFamily || "") : "",
+      computed: b ? getComputedStyle(b).fontFamily : ""
+    };
+  };
   // diagnóstico/teste: o zoom efetivamente aplicado no documento
   window.pypub_zoomInfo = function () {
     var v = getComputedStyle(document.documentElement).getPropertyValue("--pypub-zoom");

@@ -27,6 +27,11 @@ _ZOOM_MIN = 0.6
 _ZOOM_MAX = 2.5
 _ZOOM_STEP = 0.1
 
+#: Fontes de leitura (Ctrl+1..4): o ÍNDICE é o contrato entre a bridge, o QML
+#: e o JS da página (renderer._FONTS_JS tem as famílias CSS efetivas).
+#: 0 = padrão (a tipografia do próprio livro) ; 1 = serif ; 2 = sans ; 3 = mono.
+_FONTS = ("Padrão", "Serif", "Sans", "Mono")
+
 
 def _system_dark() -> bool:
     """Esquema de cor do **sistema operacional** (via tema de plataforma do Qt).
@@ -60,6 +65,7 @@ class EpubBridge(QObject):
     bookChanged = Signal()
     positionChanged = Signal()
     zoomChanged = Signal()
+    fontChanged = Signal()
     darkChanged = Signal()
     errorChanged = Signal()
     #: emitido com o HTML pronto para renderização (incluindo estado vazio)
@@ -70,6 +76,7 @@ class EpubBridge(QObject):
         self._epub: Epub | None = None
         self._index = 0
         self._zoom = 1.0
+        self._font_index = 0  # 0 = padrão (livro) ; 1 = serif ; 2 = sans ; 3 = mono
         # tema de leitura: único, segue o **sistema** (claro/escuro)
         self._dark = _system_dark()
         self._last_error = ""
@@ -146,6 +153,16 @@ class EpubBridge(QObject):
     def columnCount(self) -> int:
         """Enquadramento FIXO: sempre 1 coluna (o zoom muda só a fonte)."""
         return columns_for_zoom(self._zoom)
+
+    @Property(int, notify=fontChanged)
+    def fontIndex(self) -> int:
+        """Índice da fonte em vigor (0 = padrão do livro; 1..3 = serif/sans/mono)."""
+        return self._font_index
+
+    @Property(int, notify=fontChanged)
+    def fontCount(self) -> int:
+        """Quantidade de fontes (Ctrl+1..4): padrão + serif + sans + mono."""
+        return len(_FONTS)
 
     @Property(str, notify=bookChanged)
     def chaptersJson(self) -> str:
@@ -260,6 +277,15 @@ class EpubBridge(QObject):
     @Slot()
     def resetZoom(self) -> None:
         self._set_zoom(1.0)
+
+    @Slot(int)
+    def setFontIndex(self, index: int) -> None:
+        """Troca a fonte do texto (Ctrl+1..4). 0 = padrão (a do próprio livro)."""
+        index = max(0, min(len(_FONTS) - 1, int(index)))
+        if index == self._font_index:
+            return
+        self._font_index = index
+        self.fontChanged.emit()
 
     def _on_system_color_scheme(self) -> None:
         """O esquema do OS mudou → re-renderiza (o tema segue o sistema)."""

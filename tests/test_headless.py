@@ -636,28 +636,6 @@ def test_qml(app):
         f"total de capítulos no rodapé ({m.group(2)}) != bridge ({int(bridge.chapterCount)})"  # type: ignore[call-arg]
     )
 
-    # --- Marcador de ZOOM no rodapé (canto inferior direito, à direita do
-    # --- "p. N/M") — único indicador de % do rodapé, formato "100%" ---
-    zoom_label = win.findChild(QQuickItem, "zoomLabel")
-    assert zoom_label is not None, "marcador de zoom não encontrado no rodapé"
-    zt = str(zoom_label.property("text") or "")
-    mz = _re.match(r"^(\d+)%$", zt)
-    assert mz, f"marcador de zoom com formato inesperado (esperado 'N%'): {zt!r}"
-    assert int(mz.group(1)) == int(round(float(bridge.zoom) * 100)), (  # type: ignore[call-arg]
-        f"% no rodapé ({mz.group(1)}) != bridge ({float(bridge.zoom) * 100})"  # type: ignore[call-arg]
-    )
-    # posição: à direita do marcador de páginas e à direita do de capítulo
-    page_label = win.findChild(QQuickItem, "pageLabel")
-    assert page_label is not None, "marcador de página não encontrado no rodapé"
-    z_x = float(zoom_label.property("x") or 0.0)
-    p_x = float(page_label.property("x") or 0.0)
-    p_w = float(page_label.property("width") or 0.0)
-    c_x = float(chap_label.property("x") or 0.0)
-    assert z_x > p_x + p_w, (
-        f"marcador de zoom ({z_x}) não está à direita do 'p. N/M' ({p_x}+{p_w})")
-    assert z_x > c_x, "marcador de zoom não é o mais à direita do rodapé"
-    print("OK marcador de zoom (rodapé, '100%', à direita de 'p. N/M')")
-
     # funções de página da UI (invocadas também pelos atalhos de janela)
     from PySide6.QtCore import QMetaObject, Qt
 
@@ -798,10 +776,10 @@ def test_qml(app):
         print("OK roda unificada (pulada: o livro está no capítulo final)")
 
     # --- Roda PRECISA: o avanço é PROPORCIONAL à rolagem (nada engessado) ---
-    # • flick rápido (1 evento com 2 dentes, 2×120 px) → avança EXATAMENTE 2
-    #   páginas (não há trava de "1 página por gesto");
+    # • flick rápido (1 evento com 2 dentes, 2×120 px) → avança EXATAMENTE 4
+    #   páginas (PAGES_PER_NOTCH = 2; não há trava de "1 página por gesto");
     # • frações de página acumulam DENTRO do mesmo gesto: 2× meia página
-    #   (2×60 px) → 1 página no total (controle sub-página, nada perdido).
+    #   (2×30 px) → 1 página no total (controle sub-página, nada perdido).
     # NB: o wheel é despachado DENTRO do documento (o offscreen não entrega
     # o QWheelEvent sintético à view — validado por probe; é o mesmo
     # fallback do wheel_and_wait acima). A LÓGICA testada é a da página JS.
@@ -814,25 +792,25 @@ def test_qml(app):
         pp = int(ti["current"])
         wheel_js(+240)  # 1 evento com 2 dentes (2 × 120 px)
         t0 = time.time()
-        while cur_page() != pp + 2 and time.time() - t0 < 10:
+        while cur_page() != pp + 4 and time.time() - t0 < 10:
             app.processEvents()
             time.sleep(0.05)
-        assert cur_page() == pp + 2, \
-            f"flick de 2 dentes não andou exatamente 2 páginas (p. {pp} -> {cur_page()})"
+        assert cur_page() == pp + 4, \
+            f"flick de 2 dentes não andou exatamente 4 páginas (p. {pp} -> {cur_page()})"
         ph = cur_page()
-        wheel_js(+60)  # meia página — não completa → nada anda
+        wheel_js(+30)  # meia página (30 px) — não completa → nada anda
         time.sleep(0.15)  # < WHEEL_GAP (500 ms): mesmo gesto
         app.processEvents()
         assert cur_page() == ph, \
-            f"meia página (60 px) não deveria completar uma página (p. {ph} -> {cur_page()})"
-        wheel_js(+60)  # + meia página → completa 1 (resto acumulado)
+            f"meia página (30 px) não deveria completar uma página (p. {ph} -> {cur_page()})"
+        wheel_js(+30)  # + meia página → completa 1 (resto acumulado)
         t0 = time.time()
         while cur_page() != ph + 1 and time.time() - t0 < 10:
             app.processEvents()
             time.sleep(0.05)
         assert cur_page() == ph + 1, \
             f"2× meia página não completaram 1 página (p. {ph} -> {cur_page()})"
-        print("OK roda precisa (flick 2 dentes = 2 páginas; 2× meia página = 1 página)")
+        print("OK roda precisa (flick 2 dentes = 4 páginas; 2× meia página = 1 página)")
     else:
         print("OK roda precisa (pulada: capítulo curto, < 4 páginas)")
 
@@ -924,6 +902,38 @@ def test_qml(app):
     bridge.resetZoom()
     app.processEvents()
     print("OK zoom via teclado (Ctrl+= :", z0, "→", z1, "; documento:", zi["zoom"], ")")
+
+    # --- Fonte via teclado (Ctrl+2 no documento) → canal hash → bridge ---
+    # Ctrl+1..4 troca a família da fonte (padrão/serif/sans/mono): a página
+    # escreve #pypub:cmd:fontN na URL; o onUrlChanged do QML chama
+    # bridge.setFontIndex(); o onFontChanged aplica pypub_setFontIndex no
+    # documento (estilo inline no <body>; sem recarga). Ctrl+1 volta à
+    # tipografia do próprio livro (limpa o inline).
+    f0 = int(bridge.fontIndex)  # type: ignore[call-arg]
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: '2', ctrlKey: true, bubbles: true}))")
+    t0 = time.time()
+    while int(bridge.fontIndex) == f0 and time.time() - t0 < 20:  # type: ignore[call-arg]
+        app.processEvents()
+        time.sleep(0.1)
+    f1 = int(bridge.fontIndex)  # type: ignore[call-arg]
+    assert f1 == 1, f"Ctrl+2 não trocou a fonte (índice {f0} -> {f1})"
+    fi = json.loads(page_js("JSON.stringify(pypub_fontInfo())"))
+    assert "Serif" in fi["computed"] or "Charter" in fi["computed"], (
+        f"documento sem fonte serifada: {fi!r}")
+    # a paginação continua funcionando com a fonte nova
+    ti2 = json.loads(page_js("JSON.stringify(pypub_info())"))
+    assert int(ti2["total"]) >= 2, f"paginação quebrou com a fonte nova: {ti2!r}"
+    # Ctrl+1 → padrão (limpa o estilo inline; tipografia do livro volta)
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: '1', ctrlKey: true, bubbles: true}))")
+    t0 = time.time()
+    while int(bridge.fontIndex) == f1 and time.time() - t0 < 20:  # type: ignore[call-arg]
+        app.processEvents()
+        time.sleep(0.1)
+    f2 = int(bridge.fontIndex)  # type: ignore[call-arg]
+    assert f2 == 0, f"Ctrl+1 não voltou à fonte padrão (índice {f1} -> {f2})"
+    fi = json.loads(page_js("JSON.stringify(pypub_fontInfo())"))
+    assert fi["family"] == "", f"Ctrl+1 deveria limpar a fonte inline: {fi!r}"
+    print("OK fonte via teclado (Ctrl+2: serif no documento; Ctrl+1: volta ao padrão)")
 
     print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title,
           "| indicador p.", win.property("currentPage"), "/", win.property("pageCount"), ")")

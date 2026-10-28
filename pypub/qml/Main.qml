@@ -24,6 +24,7 @@ K.ApplicationWindow {
     property string currentChapterTitle: bridge ? bridge.currentChapterTitle : ""
     property string lastError: bridge ? bridge.lastError : ""
     property real zoom: bridge ? bridge.zoom : 1.0
+    property int fontIndex: bridge ? bridge.fontIndex : 0
 
     title: hasBook ? (bookTitle + " — PyPub") : "PyPub"
 
@@ -60,6 +61,18 @@ K.ApplicationWindow {
         var z = Number(window.zoom)
         reader.runJavaScript(
             "typeof pypub_setZoom === 'function' ? pypub_setZoom(" + z + ") : false",
+            function(ok) { if (ok) window.refreshPageInfo() })
+    }
+
+    // Fonte (Ctrl+1..4): aplica a família escolhida ao documento JÁ
+    // CARREGADO sem recarregar (pypub_setFontIndex só toca a fonte — o zoom
+    // continua dirigindo o tamanho). O re-embalinhamento pode mudar o nº de
+    // páginas → reavaliamos.
+    function applyFontToPage() {
+        if (!window.hasBook) return
+        var i = window.fontIndex | 0
+        reader.runJavaScript(
+            "typeof pypub_setFontIndex === 'function' ? pypub_setFontIndex(" + i + ") : false",
             function(ok) { if (ok) window.refreshPageInfo() })
     }
 
@@ -165,9 +178,11 @@ K.ApplicationWindow {
                     // este build não expõe loadFinished(); usa a propriedade loading
                     onLoadingChanged: {
                         if (!loading) {
-                            // garante o estado de zoom após o load (a renderização
-                            // inicial já sai certa; isso cobre zoom mudando no load)
+                            // garante o estado de zoom e de fonte após o load
+                            // (a renderização inicial já sai certa; isso cobre
+                            // zoom/fonte mudando no load)
                             window.applyZoomToPage()
+                            window.applyFontToPage()
                             window.startPageInfoPolling()
                         }
                     }
@@ -196,6 +211,14 @@ K.ApplicationWindow {
                                 bridge ? bridge.zoomOut() : undefined
                             } else if (action === "zoomreset") {
                                 bridge ? bridge.resetZoom() : undefined
+                            } else if (action === "font1") {
+                                bridge ? bridge.setFontIndex(0) : undefined
+                            } else if (action === "font2") {
+                                bridge ? bridge.setFontIndex(1) : undefined
+                            } else if (action === "font3") {
+                                bridge ? bridge.setFontIndex(2) : undefined
+                            } else if (action === "font4") {
+                                bridge ? bridge.setFontIndex(3) : undefined
                             } else if (action.indexOf("page") === 0) {
                                 // Troca de página DENTRO da página (roda do mouse /
                                 // setas com foco): a página já andou (go()); aqui o QML
@@ -277,6 +300,11 @@ K.ApplicationWindow {
         function onZoomChanged() {
             window.applyZoomToPage()
         }
+        // fonte: aplica a família escolhida ao documento sem recarga
+        // (o re-embalinhamento muda o nº de páginas → refreshPageInfo dentro)
+        function onFontChanged() {
+            window.applyFontToPage()
+        }
     }
 
     // Atalhos de teclado.
@@ -287,8 +315,9 @@ K.ApplicationWindow {
     //   <script> da própria página (renderer._PAGE_JS): setas ←/→ e
     //   PageUp/PageDown navegam a página; Ctrl+←/→ escrevem #pypub:cmd:<nome>
     //   na URL (lido pelo onUrlChanged da view, acima); Ctrl+=/-/0 é zoom;
+    //   Ctrl+1..4 troca a fonte (padrão/serif/sans/mono);
     // - com a view sem foco, estes Shortcut de janela disparam a mesma API
-    //   (setas ←/→ = página; Ctrl+←/→ = capítulo).
+    //   (setas ←/→ = página; Ctrl+←/→ = capítulo; Ctrl+1..4 = fonte).
     // A troca de página pela RODA do mouse é tratada só no <script> da página
     // (evento wheel da view → documento). Ctrl+O abre arquivo (só faz
     // sentido fora da página).
@@ -326,5 +355,27 @@ K.ApplicationWindow {
         sequences: ["Left"]
         enabled: !reader.activeFocus && window.hasBook
         onActivated: window.prevPage()
+    }
+    // Fontes (Ctrl+1..4): 1 = padrão (a do livro), 2 = serif,
+    // 3 = sans, 4 = mono — a mesma API da página (bridge.setFontIndex).
+    Shortcut {
+        sequences: ["Ctrl+1"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.setFontIndex(0) : undefined
+    }
+    Shortcut {
+        sequences: ["Ctrl+2"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.setFontIndex(1) : undefined
+    }
+    Shortcut {
+        sequences: ["Ctrl+3"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.setFontIndex(2) : undefined
+    }
+    Shortcut {
+        sequences: ["Ctrl+4"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.setFontIndex(3) : undefined
     }
 }
