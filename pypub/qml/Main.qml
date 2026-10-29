@@ -11,7 +11,7 @@ K.ApplicationWindow {
     minimumWidth: 440
     minimumHeight: 380
 
-    // estado de paginação (uma "página" = uma viewport de altura do conteúdo)
+    // estado de paginação (uma "página" = a altura da caixa de leitura)
     property int currentPage: 1
     property int pageCount: 1
 
@@ -143,8 +143,8 @@ K.ApplicationWindow {
         id: mainPage
 
         // A view preenche a página inteira (sem paddings — as margens de
-        // leitura vêm do CSS do capítulo, renderer._BASE_CSS: 28px em cima,
-        // 32px laterais, 72px embaixo). O rodapé (footer) fica colado na base.
+        // leitura vêm do CSS do capítulo, renderer._BASE_CSS: 32px
+        // uniformes em todas as bordas). O rodapé (footer) fica colado na base.
         padding: 0
         topPadding: 0
         leftPadding: 0

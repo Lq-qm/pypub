@@ -34,7 +34,8 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 - **Navegação entre capítulos** — `Ctrl+←` / `Ctrl+→` (anterior/próximo);
 - **Leitura uma página por vez** — o conteúdo é **cortado na tela** (sem
   barra de rolagem, sem rolagem livre, sem seleção além da página visível);
-  uma “página” é o que cabe numa viewport de altura, com os indicadores
+  uma “página” é o que cabe na **caixa de leitura** (a viewport com bordas
+  uniformes de 32px, constantes durante a troca de página), com os indicadores
   “cap. N/M” (capítulo do livro) e “p. N/M” (página dentro do capítulo) no
   rodapé, e enquadramento fixo (1 coluna). A troca de página é a única
   rolagem: **rodo do mouse** (rodar = trocar de página) e **setas**
@@ -241,12 +242,15 @@ fixo em 1 coluna).
 ## Como a renderização funciona
 
 - **Uma página por vez (sem rolagem livre)**: o conteúdo do capítulo **não**
-  é um documento longo e rolável — o `<body>` é o *clip* do conteúdo (altura
-  = viewport, `overflow: hidden`): sem barra de rolagem, sem rolagem por
-  momentum e sem seleção de texto além da página visível. A única “rolagem”
-  é a troca de página (roda do mouse / setas / `PageUp`/`PageDown`), que
-  desloca o scroll box do `body` (`body.scrollTop = n × altura`); o
-  viewport do documento nunca rola (`window.scrollY` permanece 0).
+  é um documento longo e rolável — o `<body>` é a *caixa de leitura* (borda
+  uniforme de 32px, `overflow: hidden`) e o `div.pypub-clip` é a *janela de
+  corte* (altura da caixa, `overflow: hidden`): sem barra de rolagem, sem
+  rolagem por momentum e sem seleção de texto além da página visível. A
+  única “rolagem” é a troca de página (roda do mouse / setas /
+  `PageUp`/`PageDown`), que desloca o clip (`clip.scrollTop = n × altura`);
+  o aro (borda de 32px) e o viewport do documento **nunca** rolam
+  (`window.scrollY` permanece 0) — o texto fica **sempre** enquadrado na
+  caixa, mesmo durante a troca.
 - **Enquadramento fixo**: o bloco de leitura é sempre **1 coluna** (o
   enquadramento **não** muda com o zoom, nem com a largura da janela). Isso
   é uma regra do CSS base (`max-width` + `margin: 0 auto`), não uma classe
@@ -282,12 +286,15 @@ fixo em 1 coluna).
     expostas (nem `QStyleHints.ColorScheme` nem flat), então a comparação é
     `"Dark" in str(scheme)`. E `QStyleHints` não instancia — acessa via
     `QApplication.styleHints()`.
-- **Paginação — uma página por vez**: o `<body>` é o clip do conteúdo
-  (altura = viewport, `overflow: hidden`); uma **página = uma viewport de
-  altura** (`window.innerHeight`) e a troca de página desloca o scroll box do
-  `body` (`body.scrollTop`) — o documento **não** transborda o viewport, não
+- **Paginação — uma página por vez**: o `<body>` é a *caixa de leitura*
+  (borda uniforme de 32px, `overflow: hidden`) e o `div.pypub-clip` é a
+  *janela de corte*; uma **página = a altura da caixa** (a viewport menos as
+  duas bordas de 32px) e a troca de página desloca o clip
+  (`clip.scrollTop`) — o documento **não** transborda o viewport, não
   existe rolagem livre (sem scrollbar/momentum) e a seleção fica limitada à
-  página visível. Um pequeno script (`pypub/renderer.py::_PAGE_JS`) é
+  página visível; a borda da caixa é **constante** durante a troca (o texto
+  continua enquadrado em 32px de todas as bordas). Um pequeno script
+  (`pypub/renderer.py::_PAGE_JS`) é
   injetado no fim do `<body>` e expõe `pypub_info()`, `pypub_nextPage()`,
   `pypub_prevPage()` e `pypub_goToPage(n)`; o QML chama via `runJavaScript`
   e atualiza o indicador “p. N/M”. `prevPage` no meio da página volta ao

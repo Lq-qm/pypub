@@ -354,29 +354,42 @@ def test_bridge_and_render(app):
                   lambda v: v is not None and v.get("current") == 1)
     assert res and res.get("current") == 1, f"pypub_prevPage() falhou: {res!r}"
 
-    # UMA PÁGINA POR VEZ: o body é o clip (overflow hidden + height 100%), o
-    # documento NÃO transborda o viewport (sem rolagem livre/scrollbar) e a
-    # troca de página desloca body.scrollTop — o viewport do documento fica
-    # parado (window.scrollY = 0). Verificação geométrica: na página 2, o
-    # primeiro bloco do capítulo está ACIMA do visível (foi cortado).
+    # UMA PÁGINA POR VEZ + CAIXA DE LEITURA: o body é o aro (borda 32px,
+    # que NÃO rola) e .pypub-clip é a janela de corte (overflow hidden +
+    # height 100% do aro); o documento NÃO transborda o viewport (sem
+    # rolagem livre/scrollbar) e a troca de página desloca clip.scrollTop —
+    # o viewport do documento fica parado (window.scrollY = 0). A borda
+    # superior da caixa é CONSTANTE na troca (32px na página 1 e na 2) e,
+    # na página 2, o primeiro bloco do capítulo está ACIMA do visível.
     assert wait_js(root, "window.getComputedStyle(document.body).overflowY",
                    lambda v: v in ("hidden",))
     assert wait_js(root, "document.documentElement.scrollHeight <= window.innerHeight + 2",
                    lambda v: v is True)
+    CLIP_JS = ("(function(){var c=document.querySelector('.pypub-clip');"
+               "return c ? JSON.stringify({top: c.getBoundingClientRect().top, "
+               "st: c.scrollTop}) : null;})()")
+    r1 = json.loads(wait_js(root, CLIP_JS, lambda v: v is not None))
+    assert r1 is not None, "caixa de leitura (.pypub-clip) ausente"
+    assert abs(r1["top"] - 32) < 2, f"borda superior da caixa deveria ser 32px: {r1!r}"
     wait_js(root, "typeof pypub_nextPage==='function'?pypub_nextPage():null",
             lambda v: v is not None and v.get("current") == 2)
+    r2 = json.loads(wait_js(root, CLIP_JS, lambda v: v is not None))
     geo = wait_js(
         root,
         "JSON.stringify({"
         "winY: window.scrollY, "
-        "clip: document.body ? document.body.scrollTop : -1, "
+        "clip: (function(){var c=document.querySelector('.pypub-clip');"
+        "return c ? c.scrollTop : -1;})(), "
         "first: (function(){var el=document.querySelector('h1,h2,h3,p');"
         "return el ? el.getBoundingClientRect().top : null;})()"
         "})",
         lambda v: v is not None)
     g = json.loads(geo)
     assert g["winY"] == 0, f"o documento não deveria rolar (winY={g['winY']})"
-    assert g["clip"] > 0, f"body.scrollTop deveria estar deslocado (clip={g['clip']})"
+    assert g["clip"] > 0, f"clip.scrollTop deveria estar deslocado (clip={g['clip']})"
+    assert abs(r2["top"] - r1["top"]) < 2, (
+        f"borda da caixa não é constante durante a troca "
+        f"(p.1: {r1['top']}px, p.2: {r2['top']}px)")
     assert g["first"] is None or g["first"] < 0, (
         f"na página 2 o primeiro bloco deveria estar acima do visível: {g!r}")
     wait_js(root, "typeof pypub_prevPage==='function'?pypub_prevPage():null",

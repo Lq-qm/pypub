@@ -31,24 +31,28 @@ from .epub import Epub
 _BASE_CSS = """
 html { -webkit-text-size-adjust: 100%; height: 100%; overflow: hidden; }
 html, body { margin: 0; padding: 0; }
+/* CAIXA DE LEITURA: o body é o aro fixo — a borda uniforme (32px) NÃO rola
+   com o conteúdo; o texto fica sempre enquadrado, mesmo durante a troca de
+   página (a rolagem acontece no .pypub-clip, abaixo). */
 body, body[class] {
     margin: 0 auto;
-    padding: 32px;  /* bordas uniformes: topo, laterais e base */
+    padding: 32px;  /* bordas uniformes: topo, laterais e base (o aro) */
     /* Fonte dirigida pelo zoom (18px em 100%): --pypub-zoom é definido em
        :root (valor inicial, conforme a bridge) e atualizado em runtime por
        pypub_setZoom() — sem recarregar a página (posição de leitura intacta) */
     font-size: calc(18px * var(--pypub-zoom, 1));
     line-height: 1.75;
     max-width: 44em;  /* enquadramento fixo (1 coluna) — o zoom muda só a fonte */
-    /* UMA PÁGINA POR VEZ: o body é o clip do conteúdo — tem exatamente a
-       altura do viewport e corta o excedente (sem barra de rolagem, sem
-       rolagem livre, sem seleção além da página visível; o documento não
-       transborda o viewport). A troca de página desloca o scroll box do
-       body (body.scrollTop) — ver pypub_nextPage/prevPage no script. */
     height: 100%;
     box-sizing: border-box;
     overflow: hidden;
 }
+/* Janela de corte (scroll box) dentro da caixa de leitura: tem exatamente a
+   altura do aro (viewport menos 2×32px) e corta o excedente (sem barra de
+   rolagem, sem rolagem livre, sem seleção além do visível; o documento não
+   transborda o viewport). A troca de página desloca o clip (clip.scrollTop)
+   — ver pypub_nextPage/prevPage no script. */
+.pypub-clip { height: 100%; overflow: hidden; }
 body {
     /* Fonte base do leitor (fallback — se o EPUB declarar a própria tipografia,
        ela vale; Noto Sans é a família de reserva). */
@@ -129,16 +133,19 @@ def empty_html(dark: bool = False) -> str:
     )
 
 # --------------------------------------------------------------------------- JS
-# Mecanismo de paginação — **uma página por vez**: o body é o clip do
-# conteúdo (height 100% + overflow: hidden no CSS do leitor), então o que se
-# vê é sempre exatamente uma página (uma viewport de altura) — o documento
-# NÃO rola livre (sem scrollbar, sem momentum, sem seleção além do visível).
-# A troca de página desloca o scroll box do body (body.scrollTop = n * H);
-# o viewport do documento permanece parado (window.scrollY sempre 0).
+# Mecanismo de paginação — **uma página por vez**, dentro da CAIXA DE
+# LEITURA: o body é o aro fixo (borda uniforme 32px, height 100% +
+# overflow: hidden) e o .pypub-clip é a janela de corte (height 100% do aro
+# + overflow: hidden), então o que se vê é sempre exatamente uma página (a
+# altura da caixa) — o documento NÃO rola livre (sem scrollbar, sem
+# momentum, sem seleção além do visível) e o texto fica SEMPRE enquadrado na
+# borda de 32px, mesmo durante a troca de página. A troca de página desloca
+# o clip (clip.scrollTop = n * H); o viewport do documento permanece parado
+# (window.scrollY sempre 0).
 # Exposto na janela do documento como pypub_info / pypub_goToPage /
 # pypub_nextPage / pypub_prevPage; o QML chama e lê os resultados via
 # runJavaScript. O enquadramento é fixo (1 coluna); a página é sempre o que
-# cabe na tela (uma viewport de altura).
+# cabe na caixa de leitura (a tela menos as bordas de 32px).
 #
 # Navegação de página: a leitura é PÁGINA A PÁGINA (uma página = um viewport
 # de altura), e a troca de página acontece por:
@@ -175,21 +182,31 @@ _PAGE_JS = """
   // Página atual (0-based) é um ESTADO, não só lido do offset do clip:
   // dentro de uma mesma avaliação JS, o offset ainda não reflete a última
   // troca, então navegação baseada só no offset ficaria defasada.
-  // (Não existe rolagem manual: o body é o clip — ver CSS do leitor.)
+  // (Não existe rolagem manual: o clip é a janela de corte — ver CSS do
+  // leitor.)
   var state = { page: 0 };
-  function h() {
-    return window.innerHeight || document.documentElement.clientHeight || 1;
+  // CAIXA DE LEITURA: o body é o aro (borda uniforme de 32px que NÃO rola);
+  // o .pypub-clip é a janela de corte (scroll box). A página = a altura do
+  // clip (a viewport menos 2×32px) — a borda da caixa permanece constante
+  // durante a troca de página.
+  function clipEl() {
+    return document.querySelector(".pypub-clip") || document.body;
   }
-  // O scroll box é o BODY (clip de uma página por vez), não o viewport do
+  function h() {
+    var c = clipEl();
+    return (c && c.clientHeight) || window.innerHeight ||
+           document.documentElement.clientHeight || 1;
+  }
+  // O scroll box é o CLIP (janela da caixa de leitura), não o viewport do
   // documento — documentElement.scrollHeight seria só a altura da tela.
   function total() {
-    var b = document.body;
-    var sh = (b && b.scrollHeight) || document.documentElement.scrollHeight || 0;
+    var c = clipEl();
+    var sh = (c && c.scrollHeight) || document.documentElement.scrollHeight || 0;
     return Math.max(1, Math.ceil(sh / h()));
   }
   function scrollPage() {
-    var b = document.body;
-    return Math.max(0, Math.floor(((b && b.scrollTop) || 0) / h()));
+    var c = clipEl();
+    return Math.max(0, Math.floor(((c && c.scrollTop) || 0) / h()));
   }
   function info() {
     var sp = scrollPage();
@@ -204,10 +221,11 @@ _PAGE_JS = """
     var t = total();
     var target = Math.max(0, Math.min(t - 1, n));
     state.page = target;
-    // Desloca o CLIP (scroll box do body): mostra a página (target+1) e
-    // corta o resto — o viewport do documento não rola (window.scrollY=0).
-    var b = document.body;
-    if (b) b.scrollTop = target * h();
+    // Desloca o CLIP (janela de corte da caixa de leitura): mostra a página
+    // (target+1) e corta o resto — o aro (borda de 32px) e o viewport do
+    // documento não rolam (window.scrollY=0).
+    var c = clipEl();
+    if (c) c.scrollTop = target * h();
     // Avisa o QML (contador "p. N/M" do rodapé): a troca aconteceu DENTRO
     // da página (roda/setas com foco) e o QML não veria sem este aviso.
     // Canal JS→Python = fragmento da URL (mesmo transporte de Ctrl+←/→ —
@@ -218,8 +236,8 @@ _PAGE_JS = """
     return { current: target + 1, total: t };
   }
   function prevPage() {
-    var b = document.body;
-    var off = (b ? b.scrollTop : 0) - state.page * h();
+    var c = clipEl();
+    var off = (c ? c.scrollTop : 0) - state.page * h();
     // no meio da página → volta ao topo; no topo → página anterior
     return go(off > 5 ? state.page : state.page - 1);
   }
@@ -314,8 +332,9 @@ _PAGE_JS = """
   }
 
   if (window.addEventListener) {
-    // Guarda de segurança: o usuário NÃO rola livre (body é o clip), mas
-    // qualquer deslocamento do clip que ande "à frente" do state é seguido.
+    // Guarda de segurança: o usuário NÃO rola livre (o clip é a janela de
+    // corte), mas qualquer deslocamento que ande "à frente" do state é
+    // seguido.
     window.addEventListener("scroll", function () {
       var sp = scrollPage();
       if (sp > state.page) state.page = sp;
@@ -462,10 +481,11 @@ _PAGE_JS = """
   };
   // diagnóstico/teste: estado da paginação
   window.pypub_debug = function () {
+    var c = clipEl();
     return {
       page: state.page + 1,
       total: total(),
-      clipTop: document.body ? document.body.scrollTop : 0,
+      clipTop: c ? c.scrollTop : 0,
       docScrollY: window.scrollY
     };
   };
@@ -608,6 +628,24 @@ def inject_page_js(html: str) -> str:
     return html + script
 
 
+def inject_clip(html: str) -> str:
+    """Envolve o conteúdo do capítulo na CAIXA DE LEITURA (``.pypub-clip``).
+
+    O ``body`` vira o aro fixo (borda uniforme de 32px, que NÃO rola); o
+    ``div.pypub-clip`` é a janela de corte (a página tem a altura do aro).
+    Assim o texto fica sempre enquadrado nas bordas — mesmo durante a troca
+    de página (rola o clip, não o aro).
+    """
+    m = re.search(r"<body[^>]*>", html, re.IGNORECASE)
+    if not m:
+        return html
+    html = html[: m.end()] + '<div class="pypub-clip">' + html[m.end():]
+    m2 = re.search(r"</body\s*>", html, re.IGNORECASE)
+    if m2:
+        html = html[: m2.start()] + "</div>" + html[m2.start():]
+    return html
+
+
 def prepare_chapter(
     raw_html: str,
     chapter_path: str,
@@ -617,11 +655,14 @@ def prepare_chapter(
 ) -> str:
     """Prepara o HTML do capítulo: recursos inline + CSS do leitor + paginação.
 
-    O tema SEGUe o sistema operacional (``dark`` = modo escuro do OS);
+    O tema SEGUE o sistema operacional (``dark`` = modo escuro do OS);
     ``zoom`` fixa o estado INICIAL da fonte (enquadramento fixo em 1 coluna);
-    os ajustes em runtime são feitos por ``pypub_setZoom``
-    no documento, sem recarga.
+    os ajustes em runtime são feitos por ``pypub_setZoom`` no documento, sem
+    recarga. O conteúdo fica dentro da CAIXA DE LEITURA (``.pypub-clip``
+    dentro do ``body``): a borda uniforme de 32px não rola — a troca de
+    página desloca o clip, mantendo o texto sempre enquadrado.
     """
     html = inline_local_resources(raw_html, chapter_path, epub)
     html = inject_css(html, dark, zoom)
-    return inject_page_js(html)
+    html = inject_page_js(html)
+    return inject_clip(html)
