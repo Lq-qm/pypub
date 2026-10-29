@@ -187,7 +187,7 @@ _PAGE_JS = """
   // troca, então navegação baseada só no offset ficaria defasada.
   // (Não existe rolagem manual: o clip é a janela de corte — ver CSS do
   // leitor.)
-  var state = { page: 0, anchors: null, dirty: true };
+  var state = { page: 0, anchors: null, dirty: true, rebases: 0 };
   // CAIXA DE LEITURA: o body é o aro (borda uniforme de 32px que NÃO rola);
   // o .pypub-clip é a janela de corte (scroll box). A página = o que cabe
   // no clip (a viewport menos 2×32px) — a borda da caixa permanece
@@ -211,6 +211,25 @@ _PAGE_JS = """
   // (±1 linha) conforme as quebras de linha do texto. Imagens/vídeos/
   // <hr> são itens ATÔMICOS: se não couberem inteiros, a página termina
   // antes deles (também não cortam).
+  //
+  // Refinamentos de precisão (linhas que "pareciam cortadas"):
+  // 1. **pixels inteiros**: o navegador arredonda ``scrollTop`` para
+  //    inteiro — as âncoras são calculadas em inteiros (topo ``floor``,
+  //    base ``ceil``) para nenhuma fração de pixel cortar o topo/base de
+  //    uma linha;
+  // 2. **respiro nas bordas** (EDGE px): a última linha visível termina
+  //    pelo menos EDGE px acima da base da caixa e a primeira linha
+  //    começa no máximo EDGE px abaixo do topo (sempre acima da base da
+  //    linha anterior — a trava que impede cortá-la) — a linha nunca
+  //    encosta no aro;
+  // 3. **linhas visuais**: itens que se sobrepõem verticalmente (ex.:
+  //    imagem inline + texto da mesma linha) viram UMA unidade — andam
+  //    juntos de página (sem a imagem cortar na fronteira);
+  // 4. **re-fluxo tardio**: fontes do livro (``document.fonts``) e
+  //    recursos que chegam depois (``load``) trocam as métricas →
+  //    âncoras recomputadas e página mantida.
+  // Respiro nas bordas da página (px): ver item 2 acima.
+  var EDGE = 3;
   function lineItems(c) {
     var clipRect = c.getBoundingClientRect();
     var off = c.scrollTop;
@@ -238,11 +257,32 @@ _PAGE_JS = """
                    bottom: er.bottom - clipRect.top + off });
     }
     items.sort(function (x, y) { return (x.top - y.top) || (x.bottom - y.bottom); });
-    return items;
+    // Pixels inteiros (o navegador arredonda o ``scrollTop``): topo para
+    // baixo, base para cima — a faixa cobre a linha por FORA (seguro nas
+    // duas bordas; nenhuma fração de pixel corta o texto).
+    for (var q = 0; q < items.length; q++) {
+      items[q].top = Math.floor(items[q].top);
+      items[q].bottom = Math.ceil(items[q].bottom);
+    }
+    // Linhas visuais: itens que se sobrepõem verticalmente (ex.: imagem
+    // inline + texto da MESMA linha) viram UMA unidade — a unidade anda
+    // inteira de página (senão a fronteira poderia cortar a sobreposição).
+    var merged = [];
+    for (var m = 0; m < items.length; m++) {
+      var last = merged[merged.length - 1];
+      if (last && items[m].top < last.bottom) {
+        if (items[m].bottom > last.bottom) last.bottom = items[m].bottom;
+      } else {
+        merged.push({ top: items[m].top, bottom: items[m].bottom });
+      }
+    }
+    return merged;
   }
-  // Âncoras: a[0] = 0 (topo da página 1); a[k] = topo da primeira linha
-  // que NÃO cabe na página k (ou o fim do conteúdo, se tudo cabe) →
-  // página k = [a[k-1], a[k]) — todas as linhas desta faixa cabem inteiras.
+  // Âncoras (pixels inteiros): a[0] = 0 (topo da página 1); a[k] = o topo
+  // da primeira linha que NÃO cabe na página k (com até EDGE px de respiro
+  // acima desse topo), ou o fim do conteúdo, se tudo cabe →
+  // página k = [a[k-1], a[k]) — todas as linhas desta faixa cabem inteiras
+  // e com respiro nas bordas.
   function recomputeAnchors() {
     var c = clipEl();
     var H = c ? c.clientHeight : 0;
@@ -258,13 +298,21 @@ _PAGE_JS = """
     var cur = 0;
     var guard = 0;
     while (cur < totalH - 0.5 && guard++ < 4000) {
-      var bottom = cur + H;
-      // linhas (ou itens) que cabem na página: bottom <= fim da página
-      while (i < items.length && items[i].bottom <= bottom + 0.5) i++;
+      // base útil da página: H menos o respiro — a última linha visível
+      // termina pelo menos EDGE px acima da base da caixa
+      var bottom = cur + H - EDGE;
+      // linhas que cabem: base <= base útil
+      while (i < items.length && items[i].bottom <= bottom) i++;
       if (i < items.length) {
-        // a primeira que NÃO cabe começa a próxima página (topo inteiro)
-        var nxt = items[i].top;
-        if (nxt <= cur + 0.5) {
+        // a primeira que NÃO cabe começa a próxima página — com respiro
+        // no topo (até EDGE px acima do topo da linha) e SEMPRE acima da
+        // base da linha anterior (a trava que impede cortá-la)
+        var raw = items[i].top - EDGE;
+        var floorA = (i > 0) ? items[i - 1].bottom + 1 : 0;
+        // nunca acima do topo da linha (senão cortaria no topo) — o
+        // respiro cede, o corte nunca
+        var nxt = Math.min(Math.max(raw, floorA), items[i].top);
+        if (nxt <= cur) {
           // item mais alto que a caixa (raro): avança a altura da caixa
           // (ele corta — inevitável para algo maior que a página)
           nxt = cur + H;
@@ -272,11 +320,11 @@ _PAGE_JS = """
         }
         cur = nxt;
       } else {
-        cur = totalH;  // sobra que coube toda: última página
+        cur = Math.ceil(totalH);  // sobra que coube toda: última página
       }
       a.push(cur);
     }
-    if (a[a.length - 1] < totalH) a.push(totalH);
+    if (a[a.length - 1] < totalH) a.push(Math.ceil(totalH));
     state.anchors = a;
     state.dirty = false;
   }
@@ -332,10 +380,11 @@ _PAGE_JS = """
     // no meio da página → volta ao topo; no topo → página anterior
     return go(off > 5 ? state.page : state.page - 1);
   }
-  // Re-fluxo (zoom / fonte / redimensionamento): as quebras de linha
-  // mudaram → recomputa as âncoras e MANTÉM a página atual (clamp, se o
-  // conteúdo encolheu) — sem recarregar.
+  // Re-fluxo (zoom / fonte / redimensionamento / fontes do livro):
+  // as quebras de linha mudaram → recomputa as âncoras e MANTÉM a página
+  // atual (clamp, se o conteúdo encolheu) — sem recarregar.
   function rebase() {
+    state.rebases++;
     var a = anchors();
     if (state.page > a.length - 1) state.page = a.length - 1;
     var c = clipEl();
@@ -454,6 +503,25 @@ _PAGE_JS = """
       state.dirty = true;
       clearTimeout(resizeT);
       resizeT = setTimeout(rebase, 120);
+    });
+
+    // Re-fluxo TARDO (as âncoras podem ter sido medidas antes destes
+    // eventos — com métricas de fallback — e linhas poderiam ficar
+    // cortadas):
+    //  • fontes do próprio livro (@font-face embutido) terminam de
+    //    carregar → o texto re-quebra;
+    //  • ``load``: recursos que ainda estavam pendentes (imagens
+    //    externas, CSS) assentam o layout.
+    // Nos dois casos: âncoras novas + página atual mantida (sem recarga).
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () {
+        state.dirty = true;
+        rebase();
+      });
+    }
+    window.addEventListener("load", function () {
+      state.dirty = true;
+      rebase();
     });
 
     // Roda do mouse = navegação UNIFICADA e PRECISA (como em leitor de
@@ -605,7 +673,8 @@ _PAGE_JS = """
       total: a.length - 1,
       clipTop: c ? c.scrollTop : 0,
       docScrollY: window.scrollY,
-      bounds: a
+      bounds: a,
+      rebases: state.rebases
     };
   };
 })();

@@ -394,9 +394,11 @@ def test_bridge_and_render(app):
         f"na página 2 o primeiro bloco deveria estar acima do visível: {g!r}")
 
     # QUEBRA POR LINHA (nenhuma linha cortada): cada fronteira de página
-    # (âncora) deve coincidir com o TOPO de alguma linha de texto (ou de um
-    # item atômico: img/video/hr) — nenhuma linha pode atravessar uma
-    # fronteira (topo < fronteira < base) — e a primeira âncora é 0.
+    # (âncora) deve ser o TOPO de alguma linha de texto (ou de um item
+    # atômico: img/video/hr) com até 3px de respiro acima (EDGE) — nenhuma
+    # linha pode atravessar uma fronteira (topo < fronteira < base) — as
+    # âncoras são pixels INTEIROS (o navegador arredonda o scrollTop; fração
+    # cortaria subpixels) — e a primeira âncora é 0.
     bounds_js = (
         "(function(){"
         "var d = pypub_debug();"
@@ -427,20 +429,24 @@ def test_bridge_and_render(app):
         "  return items.some(function(L) { return L.t < P - 0.5 && L.b > P + 0.5; });"
         "});"
         "var aligned = B.slice(1, -1).every(function(P) {"
-        "  return items.some(function(L) { return Math.abs(L.t - P) <= 1.5; });"
+        "  return items.some(function(L) { return L.t >= P - 0.5 && L.t <= P + 4; });"
         "});"
         "return JSON.stringify({bounds: B, anyCut: anyCut, aligned: aligned,"
-        "  itemCount: items.length});"
+        "  itemCount: items.length, rebases: d.rebases});"
         "})()"
     )
     br = json.loads(wait_js(root, bounds_js, lambda v: v is not None))
     assert br is not None, "falha ao medir quebras de linha"
     assert br["itemCount"] >= 3, f"linhas não medidas: {br!r}"
     assert br["bounds"][0] == 0, f"primeira âncora deveria ser 0: {br!r}"
+    assert all(float(b) == int(b) for b in br["bounds"]), (
+        f"âncoras devem ser pixels inteiros (sem subpixel): {br!r}")
     assert not br["anyCut"], (
         f"linha/item atravessando fronteira de página (cortada): {br!r}")
     assert br["aligned"], (
-        f"fronteira de página não alinhada ao topo de uma linha: {br!r}")
+        f"fronteira de página não no topo de uma linha (±respiro): {br!r}")
+    assert br["rebases"] >= 1, (
+        f"re-fluxo tardio (load/fontes) não rebaseou as âncoras: {br!r}")
 
     wait_js(root, "typeof pypub_prevPage==='function'?pypub_prevPage():null",
             lambda v: v is not None and v.get("current") == 1)

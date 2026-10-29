@@ -255,6 +255,12 @@ fixo em 1 coluna).
   caixa, mesmo durante a troca. As **quebras alinham às linhas**: cada
   página termina no topo da primeira linha que não cabe — **nenhuma linha
   fica cortada** (a altura da página varia ±1 linha conforme o reflow).
+  Refinamentos de precisão: âncoras em **pixels inteiros** (o navegador
+  arredonda o `scrollTop`; fração cortaria subpixels), **3px de respiro**
+  nas bordas (a linha nunca encosta no aro), **linhas visuais** unificadas
+  (imagem inline + texto da mesma linha andam juntos) e **re-computação**
+  das âncoras quando o re-fluxo assenta (fontes do livro, recursos
+  pendentes, zoom, redimensionamento) — página atual mantida.
 - **Enquadramento fixo**: o bloco de leitura é sempre **1 coluna** (o
   enquadramento **não** muda com o zoom, nem com a largura da janela). Isso
   é uma regra do CSS base (`max-width` + `margin: 0 auto`), não uma classe
@@ -294,8 +300,9 @@ fixo em 1 coluna).
   (borda uniforme de 32px, `overflow: hidden`) e o `div.pypub-clip` é a
   *janela de corte*; uma **página = as linhas que cabem na caixa** (altura
   da caixa = viewport menos as duas bordas de 32px, com a quebra alinhada
-  ao **topo da primeira linha que não coube** — **nenhuma linha cortada**;
-  a altura da página varia ±1 linha conforme as quebras de linha) e a troca
+  ao **topo da primeira linha que não coube** — **nenhuma linha cortada**,
+  âncoras em **pixels inteiros** com **3px de respiro** nas bordas; a
+  altura da página varia ±1 linha conforme as quebras de linha) e a troca
   de página desloca o clip (`clip.scrollTop` = âncora) — o documento
   **não** transborda o viewport, não existe rolagem livre (sem
   scrollbar/momentum) e a seleção fica limitada à página visível; a borda da
