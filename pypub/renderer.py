@@ -33,7 +33,7 @@ html { -webkit-text-size-adjust: 100%; height: 100%; overflow: hidden; }
 html, body { margin: 0; padding: 0; }
 body, body[class] {
     margin: 0 auto;
-    padding: 28px 32px 72px;
+    padding: 32px;  /* bordas uniformes: topo, laterais e base */
     /* Fonte dirigida pelo zoom (18px em 100%): --pypub-zoom é definido em
        :root (valor inicial, conforme a bridge) e atualizado em runtime por
        pypub_setZoom() — sem recarregar a página (posição de leitura intacta) */
