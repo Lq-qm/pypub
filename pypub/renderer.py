@@ -51,7 +51,8 @@ body, body[class] {
    altura do aro (viewport menos 2×32px) e corta o excedente (sem barra de
    rolagem, sem rolagem livre, sem seleção além do visível; o documento não
    transborda o viewport). A troca de página desloca o clip (clip.scrollTop)
-   — ver pypub_nextPage/prevPage no script. */
+   — ver pypub_nextPage/prevPage no script. As QUEBRAS de página alinham às
+   fronteiras de linha — nenhuma linha fica cortada (ver _PAGE_JS). */
 .pypub-clip { height: 100%; overflow: hidden; }
 body {
     /* Fonte base do leitor (fallback — se o EPUB declarar a própria tipografia,
@@ -147,8 +148,10 @@ def empty_html(dark: bool = False) -> str:
 # runJavaScript. O enquadramento é fixo (1 coluna); a página é sempre o que
 # cabe na caixa de leitura (a tela menos as bordas de 32px).
 #
-# Navegação de página: a leitura é PÁGINA A PÁGINA (uma página = um viewport
-# de altura), e a troca de página acontece por:
+# Navegação de página: a leitura é PÁGINA A PÁGINA (uma página = as linhas
+# que cabem na caixa de leitura — a quebra alinha ao topo da primeira linha
+# que NÃO coube, então nenhuma linha fica cortada na borda), e a troca de
+# página acontece por:
 # - **rodo do mouse** (wheel SEM Ctrl): a quantidade rolada vira PÁGINAS
 #   acumuladas (proporcional; resto fracionário carrega no gesto) — o
 #   conteúdo não rola livre;
@@ -184,33 +187,117 @@ _PAGE_JS = """
   // troca, então navegação baseada só no offset ficaria defasada.
   // (Não existe rolagem manual: o clip é a janela de corte — ver CSS do
   // leitor.)
-  var state = { page: 0 };
+  var state = { page: 0, anchors: null, dirty: true };
   // CAIXA DE LEITURA: o body é o aro (borda uniforme de 32px que NÃO rola);
-  // o .pypub-clip é a janela de corte (scroll box). A página = a altura do
-  // clip (a viewport menos 2×32px) — a borda da caixa permanece constante
-  // durante a troca de página.
+  // o .pypub-clip é a janela de corte (scroll box). A página = o que cabe
+  // no clip (a viewport menos 2×32px) — a borda da caixa permanece
+  // constante durante a troca de página.
   function clipEl() {
     return document.querySelector(".pypub-clip") || document.body;
   }
+  // Altura da caixa (viewport menos 2×32px): a página é o que cabe aqui.
   function h() {
     var c = clipEl();
     return (c && c.clientHeight) || window.innerHeight ||
            document.documentElement.clientHeight || 1;
   }
-  // O scroll box é o CLIP (janela da caixa de leitura), não o viewport do
-  // documento — documentElement.scrollHeight seria só a altura da tela.
-  function total() {
-    var c = clipEl();
-    var sh = (c && c.scrollHeight) || document.documentElement.scrollHeight || 0;
-    return Math.max(1, Math.ceil(sh / h()));
+  // -------------------------------------------------------------- quebra de
+  // linha — QUEBRA DE PÁGINA POR LINHA (nenhuma linha cortada): as páginas
+  // NÃO têm altura fixa — cada página vai da âncora (topo da primeira
+  // linha visível) até o topo da PRIMEIRA LINHA QUE NÃO CABE na caixa
+  // (próxima âncora). Assim nenhuma linha cruza a borda de uma página:
+  // na página em que não cabe, ela simplesmente não aparece; na página
+  // seguinte, ela aparece INTEIRA no topo. A altura de cada página varia
+  // (±1 linha) conforme as quebras de linha do texto. Imagens/vídeos/
+  // <hr> são itens ATÔMICOS: se não couberem inteiros, a página termina
+  // antes deles (também não cortam).
+  function lineItems(c) {
+    var clipRect = c.getBoundingClientRect();
+    var off = c.scrollTop;
+    var items = [];
+    var walker = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);
+    var n;
+    while ((n = walker.nextNode())) {
+      if (!n.nodeValue || !n.nodeValue.trim()) continue;
+      var r = document.createRange();
+      r.selectNodeContents(n);
+      var rects = r.getClientRects();
+      for (var i = 0; i < rects.length; i++) {
+        if (!rects[i] || rects[i].height <= 0) continue;
+        items.push({
+          top: rects[i].top - clipRect.top + off,
+          bottom: rects[i].bottom - clipRect.top + off
+        });
+      }
+    }
+    var els = c.querySelectorAll("img, video, canvas, iframe, hr");
+    for (var j = 0; j < els.length; j++) {
+      var er = els[j].getBoundingClientRect();
+      if (er.height <= 0) continue;
+      items.push({ top: er.top - clipRect.top + off,
+                   bottom: er.bottom - clipRect.top + off });
+    }
+    items.sort(function (x, y) { return (x.top - y.top) || (x.bottom - y.bottom); });
+    return items;
   }
-  function scrollPage() {
+  // Âncoras: a[0] = 0 (topo da página 1); a[k] = topo da primeira linha
+  // que NÃO cabe na página k (ou o fim do conteúdo, se tudo cabe) →
+  // página k = [a[k-1], a[k]) — todas as linhas desta faixa cabem inteiras.
+  function recomputeAnchors() {
     var c = clipEl();
-    return Math.max(0, Math.floor(((c && c.scrollTop) || 0) / h()));
+    var H = c ? c.clientHeight : 0;
+    var totalH = c ? c.scrollHeight : 0;
+    if (!H || !totalH) {
+      state.anchors = [0, 1];
+      state.dirty = false;
+      return;
+    }
+    var items = lineItems(c);
+    var a = [0];
+    var i = 0;
+    var cur = 0;
+    var guard = 0;
+    while (cur < totalH - 0.5 && guard++ < 4000) {
+      var bottom = cur + H;
+      // linhas (ou itens) que cabem na página: bottom <= fim da página
+      while (i < items.length && items[i].bottom <= bottom + 0.5) i++;
+      if (i < items.length) {
+        // a primeira que NÃO cabe começa a próxima página (topo inteiro)
+        var nxt = items[i].top;
+        if (nxt <= cur + 0.5) {
+          // item mais alto que a caixa (raro): avança a altura da caixa
+          // (ele corta — inevitável para algo maior que a página)
+          nxt = cur + H;
+          i++;
+        }
+        cur = nxt;
+      } else {
+        cur = totalH;  // sobra que coube toda: última página
+      }
+      a.push(cur);
+    }
+    if (a[a.length - 1] < totalH) a.push(totalH);
+    state.anchors = a;
+    state.dirty = false;
+  }
+  function anchors() {
+    if (state.dirty || !state.anchors) recomputeAnchors();
+    return state.anchors;
+  }
+  function total() { return anchors().length - 1; }
+  // Página (0-based) que contém o offset: maior k com a[k-1] <= off.
+  function pageAt(off) {
+    var a = anchors();
+    var idx = 0;
+    for (var i = a.length - 1; i >= 1; i--) {
+      if (off >= a[i - 1] - 0.5) { idx = i - 1; break; }
+    }
+    return idx;
   }
   function info() {
-    var sp = scrollPage();
-    if (sp > state.page) state.page = sp;  // rolagem manual anda à frente
+    var c = clipEl();
+    var sp = pageAt(c ? c.scrollTop : 0);
+    if (sp > state.page) state.page = sp;  // qualquer deslocamento avança
     state.page = Math.min(total() - 1, state.page);
     // src = URL deste documento: o QML descarta respostas de documentos
     // antigos (durante a navegação a URL da view já é a nova, mas o DOM
@@ -218,14 +305,18 @@ _PAGE_JS = """
     return { current: state.page + 1, total: total(), src: location.href };
   }
   function go(n) {
-    var t = total();
-    var target = Math.max(0, Math.min(t - 1, n));
+    var a = anchors();
+    var t = a.length - 1;
+    var target = Math.max(0, Math.min(t, Math.round(Number(n)) || 0));
     state.page = target;
-    // Desloca o CLIP (janela de corte da caixa de leitura): mostra a página
-    // (target+1) e corta o resto — o aro (borda de 32px) e o viewport do
-    // documento não rolam (window.scrollY=0).
+    // Desloca o CLIP (janela de corte da caixa de leitura): mostra a
+    // página (target+1) e corta o resto — o aro (borda de 32px) e o
+    // viewport do documento não rolam (window.scrollY=0). O topo da
+    // página é a âncora a[target]: uma fronteira de linha (nenhuma linha
+    // cortada no topo; e nenhuma linha da página anterior foi cortada na
+    // base, porque a âncora é o topo da primeira linha que NÃO coube).
     var c = clipEl();
-    if (c) c.scrollTop = target * h();
+    if (c) c.scrollTop = a[target];
     // Avisa o QML (contador "p. N/M" do rodapé): a troca aconteceu DENTRO
     // da página (roda/setas com foco) e o QML não veria sem este aviso.
     // Canal JS→Python = fragmento da URL (mesmo transporte de Ctrl+←/→ —
@@ -237,9 +328,18 @@ _PAGE_JS = """
   }
   function prevPage() {
     var c = clipEl();
-    var off = (c ? c.scrollTop : 0) - state.page * h();
+    var off = (c ? c.scrollTop : 0) - (anchors()[state.page] || 0);
     // no meio da página → volta ao topo; no topo → página anterior
     return go(off > 5 ? state.page : state.page - 1);
+  }
+  // Re-fluxo (zoom / fonte / redimensionamento): as quebras de linha
+  // mudaram → recomputa as âncoras e MANTÉM a página atual (clamp, se o
+  // conteúdo encolheu) — sem recarregar.
+  function rebase() {
+    var a = anchors();
+    if (state.page > a.length - 1) state.page = a.length - 1;
+    var c = clipEl();
+    if (c) c.scrollTop = a[state.page];
   }
   // Navegação UNIFICADA (como em leitor de documento): anda UMA etapa —
   // próxima/anterior página; nas bordas do capítulo, segue para o capítulo
@@ -304,6 +404,10 @@ _PAGE_JS = """
     var de = document.documentElement;
     if (!de) return false;
     de.style.setProperty("--pypub-zoom", String(z));
+    // re-fluxo: as quebras de linha mudaram → novas âncoras; a página
+    // atual é mantida (clamp) — ver rebase().
+    state.dirty = true;
+    rebase();
     return true;
   }
 
@@ -328,6 +432,8 @@ _PAGE_JS = """
     var f = FONTS[i];
     if (f) b.style.setProperty("font-family", f);
     else b.style.removeProperty("font-family");
+    state.dirty = true;
+    rebase();
     return true;
   }
 
@@ -336,8 +442,18 @@ _PAGE_JS = """
     // corte), mas qualquer deslocamento que ande "à frente" do state é
     // seguido.
     window.addEventListener("scroll", function () {
-      var sp = scrollPage();
+      var c = clipEl();
+      var sp = pageAt(c ? c.scrollTop : 0);
       if (sp > state.page) state.page = sp;
+    });
+
+    // Redimensionar a janela muda a altura da caixa → recomputa as âncoras
+    // (com debounce) e mantém a página atual.
+    var resizeT = 0;
+    window.addEventListener("resize", function () {
+      state.dirty = true;
+      clearTimeout(resizeT);
+      resizeT = setTimeout(rebase, 120);
     });
 
     // Roda do mouse = navegação UNIFICADA e PRECISA (como em leitor de
@@ -479,14 +595,17 @@ _PAGE_JS = """
       fontSize: b ? parseFloat(getComputedStyle(b).fontSize) : 18
     };
   };
-  // diagnóstico/teste: estado da paginação
+  // diagnóstico/teste: estado da paginação (bounds = âncoras do topo de
+  // cada página, em coordenadas do documento; a última = fim do conteúdo)
   window.pypub_debug = function () {
     var c = clipEl();
+    var a = anchors();
     return {
       page: state.page + 1,
-      total: total(),
+      total: a.length - 1,
       clipTop: c ? c.scrollTop : 0,
-      docScrollY: window.scrollY
+      docScrollY: window.scrollY,
+      bounds: a
     };
   };
 })();

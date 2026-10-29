@@ -35,7 +35,9 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 - **Leitura uma página por vez** — o conteúdo é **cortado na tela** (sem
   barra de rolagem, sem rolagem livre, sem seleção além da página visível);
   uma “página” é o que cabe na **caixa de leitura** (a viewport com bordas
-  uniformes de 32px, constantes durante a troca de página), com os indicadores
+  uniformes de 32px, constantes durante a troca de página), com **quebra
+  por linha** (nenhuma linha fica cortada: a página termina na última linha
+  que cabe, e a seguinte começa no topo da linha inteira), com os indicadores
   “cap. N/M” (capítulo do livro) e “p. N/M” (página dentro do capítulo) no
   rodapé, e enquadramento fixo (1 coluna). A troca de página é a única
   rolagem: **rodo do mouse** (rodar = trocar de página) e **setas**
@@ -247,10 +249,12 @@ fixo em 1 coluna).
   corte* (altura da caixa, `overflow: hidden`): sem barra de rolagem, sem
   rolagem por momentum e sem seleção de texto além da página visível. A
   única “rolagem” é a troca de página (roda do mouse / setas /
-  `PageUp`/`PageDown`), que desloca o clip (`clip.scrollTop = n × altura`);
-  o aro (borda de 32px) e o viewport do documento **nunca** rolam
+  `PageUp`/`PageDown`), que desloca o clip (`clip.scrollTop` = âncora da
+  página); o aro (borda de 32px) e o viewport do documento **nunca** rolam
   (`window.scrollY` permanece 0) — o texto fica **sempre** enquadrado na
-  caixa, mesmo durante a troca.
+  caixa, mesmo durante a troca. As **quebras alinham às linhas**: cada
+  página termina no topo da primeira linha que não cabe — **nenhuma linha
+  fica cortada** (a altura da página varia ±1 linha conforme o reflow).
 - **Enquadramento fixo**: o bloco de leitura é sempre **1 coluna** (o
   enquadramento **não** muda com o zoom, nem com a largura da janela). Isso
   é uma regra do CSS base (`max-width` + `margin: 0 auto`), não uma classe
@@ -288,12 +292,15 @@ fixo em 1 coluna).
     `QApplication.styleHints()`.
 - **Paginação — uma página por vez**: o `<body>` é a *caixa de leitura*
   (borda uniforme de 32px, `overflow: hidden`) e o `div.pypub-clip` é a
-  *janela de corte*; uma **página = a altura da caixa** (a viewport menos as
-  duas bordas de 32px) e a troca de página desloca o clip
-  (`clip.scrollTop`) — o documento **não** transborda o viewport, não
-  existe rolagem livre (sem scrollbar/momentum) e a seleção fica limitada à
-  página visível; a borda da caixa é **constante** durante a troca (o texto
-  continua enquadrado em 32px de todas as bordas). Um pequeno script
+  *janela de corte*; uma **página = as linhas que cabem na caixa** (altura
+  da caixa = viewport menos as duas bordas de 32px, com a quebra alinhada
+  ao **topo da primeira linha que não coube** — **nenhuma linha cortada**;
+  a altura da página varia ±1 linha conforme as quebras de linha) e a troca
+  de página desloca o clip (`clip.scrollTop` = âncora) — o documento
+  **não** transborda o viewport, não existe rolagem livre (sem
+  scrollbar/momentum) e a seleção fica limitada à página visível; a borda da
+  caixa é **constante** durante a troca (o texto continua enquadrado em
+  32px de todas as bordas). Um pequeno script
   (`pypub/renderer.py::_PAGE_JS`) é
   injetado no fim do `<body>` e expõe `pypub_info()`, `pypub_nextPage()`,
   `pypub_prevPage()` e `pypub_goToPage(n)`; o QML chama via `runJavaScript`

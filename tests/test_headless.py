@@ -392,6 +392,56 @@ def test_bridge_and_render(app):
         f"(p.1: {r1['top']}px, p.2: {r2['top']}px)")
     assert g["first"] is None or g["first"] < 0, (
         f"na página 2 o primeiro bloco deveria estar acima do visível: {g!r}")
+
+    # QUEBRA POR LINHA (nenhuma linha cortada): cada fronteira de página
+    # (âncora) deve coincidir com o TOPO de alguma linha de texto (ou de um
+    # item atômico: img/video/hr) — nenhuma linha pode atravessar uma
+    # fronteira (topo < fronteira < base) — e a primeira âncora é 0.
+    bounds_js = (
+        "(function(){"
+        "var d = pypub_debug();"
+        "var c = document.querySelector('.pypub-clip');"
+        "var clipTop = c.getBoundingClientRect().top;"
+        "var items = [];"
+        "var w = document.createTreeWalker(c, NodeFilter.SHOW_TEXT);"
+        "var n;"
+        "while ((n = w.nextNode())) {"
+        "  if (!n.nodeValue.trim()) continue;"
+        "  var r = document.createRange(); r.selectNodeContents(n);"
+        "  var rs = r.getClientRects();"
+        "  for (var i=0;i<rs.length;i++) {"
+        "    if (rs[i].height <= 0) continue;"
+        "    items.push({t: rs[i].top - clipTop + c.scrollTop,"
+        "                b: rs[i].bottom - clipTop + c.scrollTop});"
+        "  }"
+        "}"
+        "var els = c.querySelectorAll('img, video, canvas, iframe, hr');"
+        "for (var j=0;j<els.length;j++) {"
+        "  var er = els[j].getBoundingClientRect();"
+        "  if (er.height <= 0) continue;"
+        "  items.push({t: er.top - clipTop + c.scrollTop,"
+        "              b: er.bottom - clipTop + c.scrollTop});"
+        "}"
+        "var B = d.bounds;"
+        "var anyCut = B.slice(1).some(function(P) {"
+        "  return items.some(function(L) { return L.t < P - 0.5 && L.b > P + 0.5; });"
+        "});"
+        "var aligned = B.slice(1, -1).every(function(P) {"
+        "  return items.some(function(L) { return Math.abs(L.t - P) <= 1.5; });"
+        "});"
+        "return JSON.stringify({bounds: B, anyCut: anyCut, aligned: aligned,"
+        "  itemCount: items.length});"
+        "})()"
+    )
+    br = json.loads(wait_js(root, bounds_js, lambda v: v is not None))
+    assert br is not None, "falha ao medir quebras de linha"
+    assert br["itemCount"] >= 3, f"linhas não medidas: {br!r}"
+    assert br["bounds"][0] == 0, f"primeira âncora deveria ser 0: {br!r}"
+    assert not br["anyCut"], (
+        f"linha/item atravessando fronteira de página (cortada): {br!r}")
+    assert br["aligned"], (
+        f"fronteira de página não alinhada ao topo de uma linha: {br!r}")
+
     wait_js(root, "typeof pypub_prevPage==='function'?pypub_prevPage():null",
             lambda v: v is not None and v.get("current") == 1)
 
