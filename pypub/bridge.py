@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import logging
+from urllib.parse import unquote, urlparse
 
 from PySide6.QtCore import Property, QObject, Signal, Slot
 
@@ -203,6 +204,32 @@ class EpubBridge(QObject):
         self.positionChanged.emit()
         self._emit_content()
         return True
+
+    @Slot("QList<QString>", result=bool)
+    def openDropped(self, paths) -> bool:
+        """Abre o **primeiro** arquivo arrastado que for um .epub válido.
+
+        É o alvo do *drag & drop* da janela (o ``DropArea`` do QML passa as
+        URLs — caminho local ou ``file://`` — e delega a cá). **Não exige
+        extensão .epub**: muitos livros chegam sem (ex.: downloads da
+        Anna's Archive). Em vez de filtrar por extensão, **tenta abrir cada
+        arquivo** na ordem e aceita o primeiro que o parser validar como EPUB.
+        Se nenhum abrir, o erro do último (via ``openFile``) fica no rodapé.
+        """
+
+        def _local(raw: str) -> str:
+            s = str(raw).strip()
+            if s.startswith("file://"):
+                s = unquote(urlparse(s).path)
+            return s
+
+        for raw in (paths or []):
+            s = _local(raw)
+            if not s:
+                continue
+            if self.openFile(s):
+                return True
+        return False
 
     @Slot()
     def closeBook(self) -> None:

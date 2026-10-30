@@ -31,6 +31,10 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
 
 - **Abrir e ler `.epub`** (EPUB 2/3, ZIP + OCF/OPF) — sem bibliotecas de
   parseamento externas;
+- **Abrir por arraste (drag & drop)** — solte um `.epub` em qualquer ponto da
+  janela: com a janela vazia, **abre o livro**; com livro aberto, **substitui**
+  pelo novo. A janela destaca enquanto o arquivo é arrastado e avisa no rodapé
+  se o que foi solto não for `.epub`;
 - **Navegação entre capítulos** — `Ctrl+←` / `Ctrl+→` (anterior/próximo);
 - **Leitura uma página por vez** — o conteúdo é **cortado na tela** (sem
   barra de rolagem, sem rolagem livre, sem seleção além da página visível);
@@ -86,7 +90,8 @@ título;
   Ctrl/Meta (preventDefault), o que também suprime o zoom nativo de página
   do Chromium;
 - **Interface enxuta** — sem toolbar, sem sumário, sem botões de
-  navegação/zoom: abrir é `Ctrl+O` (ou `pypub livro.epub`); navegação é por
+  navegação/zoom: abrir é `Ctrl+O`, **arrastar um `.epub` para a janela**
+  (ou `pypub livro.epub`); navegação é por
   atalhos/gestos (capítulo `Ctrl+←/→`, página roda/setas). A janela é só
   **conteúdo + rodapé**: o toolbar global do Kirigami (`KPageRow`) é
   desligado (`ApplicationHeaderStyle.None`) e os paddings da página são
@@ -125,7 +130,7 @@ título;
 
 ```sh
 uv sync            # cria o .venv e instala PySide6 + PySide6-WebEngine
-uv run pypub       # abre o leitor (Ctrl+O para escolher o .epub)
+uv run pypub       # abre o leitor (Ctrl+O ou arraste um .epub para a janela)
 ```
 
 Ou abra um EPUB diretamente ao iniciar:
@@ -144,7 +149,8 @@ pypub livro.epub
 
 ## Uso
 
-- **Abrir**: `Ctrl+O` (ou passe o arquivo: `pypub livro.epub`);
+- **Abrir**: `Ctrl+O`, **arrastar um `.epub` para a janela** (ou passe o
+  arquivo: `pypub livro.epub`);
 - **Navegar por capítulo**: `Ctrl+←` / `Ctrl+→` (anterior / próximo);
 - **Navegar**: **roda do mouse** (rodar para baixo = adiante, para cima =
   atrás — não é rolagem livre) ou **setas** `←` / `→` / `PageUp` / `PageDown`.
@@ -180,7 +186,8 @@ pypub livro.epub
 ┌──────────────────────────────────────────────────────────────────────┐
 │  QML / Kirigami  (pypub/qml/Main.qml)                                │
 │  K.ApplicationWindow + K.Page                                         │
-│  ├── sem toolbar (interface enxuta): abrir é Ctrl+O / CLI            │
+│  ├── sem toolbar (enxuta): abrir é Ctrl+O / CLI / drag & drop        │
+│  ├── DropArea "dropArea": solta .epub → bridge.openDropped(paths)    │
 │  ├── WebEngineView (objectName "reader")  ←  renderiza o HTML        │
 │  │   • paginação: pypub_info/nextPage/prevPage via runJavaScript     │
 │  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome>                │
@@ -200,7 +207,7 @@ pypub livro.epub
 │  • estado: hasBook, bookTitle, chapterCount, currentIndex, zoom,     │
 │            fontIndex, columnCount, chaptersJson, dark,               │
 │  • ações: openFile, closeBook, chooseFile, previous, next, goTo,     │
-│           zoomIn/Out, resetZoom, setFontIndex,                       │
+│           zoomIn/Out, resetZoom, setFontIndex, openDropped,          │
 │           contentUrl, shutdown                                       │
 │  • tema: dark segue o OS (QStyleHints.colorScheme) + sinal ao vivo   │
 │  • sinais: bookChanged, positionChanged, zoomChanged, fontChanged,   │

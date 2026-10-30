@@ -593,6 +593,66 @@ def test_bridge_and_render(app):
     bridge.shutdown()
 
 
+def test_open_dropped(app):
+    """Drag & drop: bridge.openDropped abre o primeiro .epub válido (o
+    DropArea do QML delega a cá). Testado direto em Python — o alvo do drop
+    da janela. Não exige extensão: tenta abrir e valida pelo conteúdo."""
+    import shutil
+    import urllib.parse
+
+    from pypub.bridge import EpubBridge
+
+    bridge = EpubBridge()
+
+    # 1) caminho local .epub → abre o livro
+    assert bridge.openDropped([SAMPLE])
+    assert bridge.hasBook
+    assert bridge.chapterCount == 3
+    assert bridge.lastError == ""
+
+    # 2) file:// (URL com caminho) → abre
+    bridge.closeBook()
+    assert not bridge.hasBook
+    url = "file://" + urllib.parse.quote(SAMPLE)
+    assert bridge.openDropped([url])
+    assert bridge.hasBook
+
+    # 3) arquivo NÃO-EPUB → não abre + mensagem de erro no rodapé
+    bridge.closeBook()
+    assert not bridge.hasBook
+    txt = os.path.join(_TMP, "nao_epub.txt")
+    with open(txt, "w") as f:
+        f.write("oi")
+    assert not bridge.openDropped([txt])
+    assert not bridge.hasBook
+    err = str(bridge.lastError or "")
+    assert "epub" in err.lower(), err
+    assert "nao_epub.txt" in err, err
+
+    # 4) mistura (não-epub + epub) → abre o epub
+    bridge.closeBook()
+    assert bridge.openDropped([txt, SAMPLE])
+    assert bridge.hasBook
+    assert str(bridge.lastError or "") == ""
+
+    # 5) lista vazia → nada acontece (sem erro, sem livro)
+    bridge.closeBook()
+    assert not bridge.openDropped([])
+    assert not bridge.hasBook
+
+    # 6) .epub SEM extensão (ex.: download Anna's Archive) → ainda abre
+    bridge.closeBook()
+    noext = os.path.join(_TMP, "livro_sem_extensao")
+    shutil.copyfile(SAMPLE, noext)
+    assert bridge.openDropped([noext])
+    assert bridge.hasBook
+    assert bridge.chapterCount == 3
+
+    bridge.shutdown()
+    print("OK openDropped (drag & drop: .epub abre; file:// ok; não-EPUB rejeitado; "
+          "mistura abre o .epub; SEM extensão abre)")
+
+
 def test_qml(app):
     from PySide6.QtCore import QUrl
     from PySide6.QtQml import QQmlComponent, QQmlEngine
@@ -624,6 +684,9 @@ def test_qml(app):
 
     reader = win.findChild(QQuickItem, "reader")
     assert reader is not None, "reader não encontrado na UI"
+    # drag & drop: o DropArea (aceita arquivos .epub) existe na UI real
+    drop = win.findChild(QQuickItem, "dropArea")
+    assert drop is not None, "DropArea (drag & drop .epub) não encontrado na UI"
     wait_view_idle(reader)
     app.processEvents()
 
@@ -1062,6 +1125,7 @@ def main():
 
     try:
         test_bridge_and_render(app)
+        test_open_dropped(app)
         rc = test_qml(app)
         return rc
     finally:

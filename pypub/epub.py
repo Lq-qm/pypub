@@ -80,8 +80,14 @@ class Epub:
             zf = zipfile.ZipFile(path, "r")
         except FileNotFoundError as e:
             raise EpubError(f"Arquivo não encontrado: {path}") from e
+        except IsADirectoryError as e:
+            raise EpubError(
+                f"'{path}' é uma pasta — arraste o ARQUIVO .epub, não a pasta"
+            ) from e
         except zipfile.BadZipFile as e:
             raise EpubError(f"'{path}' não é um arquivo EPUB válido (ZIP corrompido ou ausente)") from e
+        except OSError as e:
+            raise EpubError(f"não consegui abrir '{path}': {e}") from e
 
         names = {posixpath.normpath(n) for n in zf.namelist() if not n.endswith("/")}
 

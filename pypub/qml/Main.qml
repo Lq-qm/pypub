@@ -268,7 +268,7 @@ K.ApplicationWindow {
                         ? qsTr("Capítulo %1 de %2 — %3").arg(window.currentIndex + 1).arg(window.chapterCount).arg(window.currentChapterTitle)
                         : (window.lastError.length > 0
                             ? window.lastError
-                            : qsTr("Abra um arquivo .epub para começar  (Ctrl+O)"))
+                            : qsTr("Arraste um arquivo .epub para a janela  (ou Ctrl+O)"))
                     // Erro tem sempre a cor de erro do sistema; o resto segue a
                     // cor de 1º plano do Kirigami (padrão do item).
                     color: window.lastError.length > 0
@@ -292,6 +292,62 @@ K.ApplicationWindow {
                     anchors.verticalCenter: parent.verticalCenter
                     visible: window.hasBook
                     text: qsTr("p. %1/%2").arg(window.currentPage).arg(window.pageCount)
+                }
+            }
+        }
+
+        // DRAG & DROP: aceita arquivos .epub soltos em qualquer ponto da janela.
+        // Declarado DEPOIS do footer (e do contentItem/WebEngineView) para ficar
+        // no topo em z-order — assim o drop cai aqui e não no conteúdo da view.
+        // A lógica de abrir mora em bridge.openDropped; o QML só passa as URLs
+        // (caminho ou file://). Funciona com a janela vazia (abre o livro) e com
+        // livro aberto (substitui pelo novo).
+        DropArea {
+            id: dropArea
+            objectName: "dropArea"
+            anchors.fill: parent
+
+            // Feedback visual enquanto um arquivo é arrastado sobre a janela
+            // (containsDrag fica true durante o drag sobre a área)
+            Rectangle {
+                anchors.fill: parent
+                visible: dropArea.containsDrag
+                color: "transparent"
+                border.width: 3
+                border.color: (typeof K.Kirigami !== "undefined") ? K.Kirigami.accentColor : "#2a7ae2"
+                Label {
+                    anchors.centerIn: parent
+                    text: qsTr("Solte o arquivo .epub para abrir")
+                    font.pixelSize: 18
+                    font.bold: true
+                    padding: 12
+                    background: Rectangle {
+                        radius: 6
+                        opacity: 0.92
+                        color: bridge ? (bridge.dark ? "#2a2a2a" : "#ffffff") : "#ffffff"
+                        border.width: 1
+                        border.color: (typeof K.Kirigami !== "undefined") ? K.Kirigami.accentColor : "#2a7ae2"
+                    }
+                }
+            }
+
+            onDropped: (drop) => {
+                if (drop.hasUrls) {
+                    var paths = []
+                    for (var i = 0; i < drop.urls.length; i++) {
+                        var u = drop.urls[i]
+                        // drop.urls[i] pode ser um QUrl (com toLocalFile) ou uma
+                        // string "file://..." (varia por build/plataforma). Aceita
+                        // ambos; a bridge normaliza file:// → caminho local.
+                        if (typeof u.toLocalFile === "function")
+                            paths.push(u.toLocalFile())
+                        else
+                            paths.push(String(u))
+                    }
+                    if (bridge)
+                        bridge.openDropped(paths)
+                    // Qt::DropAction é exposto no QML como Qt.*Action
+                    drop.accept(Qt.CopyAction)
                 }
             }
         }
