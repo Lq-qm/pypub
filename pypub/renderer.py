@@ -460,18 +460,25 @@ _PAGE_JS = """
     return true;
   }
 
-  // Fonte (Ctrl+1..4): troca a família da fonte do corpo SEM recarregar —
+  // Fonte (Ctrl+1..9): troca a família da fonte do corpo SEM recarregar —
   // estilo inline no <body> (vence o CSS do livro, que é o ponto da escolha
   // explícita; o zoom continua dirigindo o TAMANHO via --pypub-zoom). O
   // re-embalinhamento muda o nº de páginas → o QML reavalia (refreshPageInfo).
   //   0 = padrão (a tipografia do próprio livro / fallback do leitor —
   //       limpa o estilo inline e devolve o comportamento original)
-  //   1 = serifada (leitura)   2 = sans   3 = monoespaçada
+  //   1 = serifada (Charter)  2 = sans (Cantarell)  3 = mono (DejaVu)
+  //   4 = Open Sans  5 = Mulish  6 = Vera Serif
+  //   7 = JetBrains Mono  8 = Fira Code
   var FONTS = [
     null,
     '"Bitstream Charter", "Liberation Serif", "DejaVu Serif", "Noto Serif", serif',
     '"Cantarell", "Noto Sans", "Liberation Sans", "DejaVu Sans", sans-serif',
-    '"DejaVu Sans Mono", "Liberation Mono", monospace'
+    '"DejaVu Sans Mono", "Liberation Mono", monospace',
+    '"Open Sans", "Noto Sans", "Liberation Sans", sans-serif',
+    '"Mulish", "Open Sans", "Noto Sans", sans-serif',
+    '"Bitstream Vera Serif", "Liberation Serif", "DejaVu Serif", serif',
+    '"JetBrains Mono", "JetBrainsMono Nerd Font", "Fira Code", "FiraCode Nerd Font", monospace',
+    '"Fira Code", "FiraCode Nerd Font", "JetBrains Mono", "JetBrainsMono Nerd Font", monospace'
   ];
   function setFontIndex(i) {
     i = Math.floor(Number(i));
@@ -626,8 +633,9 @@ _PAGE_JS = """
         } else if (k === "0") {
           zoomReset();
           e.preventDefault(); e.stopPropagation();
-        } else if (k >= "1" && k <= "4") {
-          // fonte (Ctrl+1..4): padrão / serif / sans / mono
+        } else if (k >= "1" && k <= "9") {
+          // fonte (Ctrl+1..9): padrão / serif / sans / mono / Open Sans /
+          // Mulish / Vera Serif / JetBrains Mono / Fira Code
           cmd("font" + k);
           e.preventDefault(); e.stopPropagation();
         }
@@ -641,7 +649,7 @@ _PAGE_JS = """
   window.pypub_prevPage = prevPage;
   // zoom: aplica fonte + enquadramento sem recarga (ver setZoom acima)
   window.pypub_setZoom = setZoom;
-  // fonte: aplica a família escolhida (Ctrl+1..4) sem recarga
+  // fonte: aplica a família escolhida (Ctrl+1..9) sem recarga
   window.pypub_setFontIndex = setFontIndex;
   // diagnóstico/teste: a fonte efetivamente aplicada no documento
   window.pypub_fontInfo = function () {

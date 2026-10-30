@@ -27,10 +27,15 @@ _ZOOM_MIN = 0.6
 _ZOOM_MAX = 2.5
 _ZOOM_STEP = 0.1
 
-#: Fontes de leitura (Ctrl+1..4): o ÍNDICE é o contrato entre a bridge, o QML
-#: e o JS da página (renderer._FONTS_JS tem as famílias CSS efetivas).
-#: 0 = padrão (a tipografia do próprio livro) ; 1 = serif ; 2 = sans ; 3 = mono.
-_FONTS = ("Padrão", "Serif", "Sans", "Mono")
+#: Fontes de leitura (Ctrl+1..9): o ÍNDICE é o contrato entre a bridge, o QML
+#: e o JS da página (o array ``FONTS`` no renderer tem as famílias CSS efetivas).
+#: 0 = padrão (a tipografia do próprio livro); 1 = serif; 2 = sans; 3 = mono;
+#: 4 = Open Sans; 5 = Mulish; 6 = Vera Serif; 7 = JetBrains Mono; 8 = Fira Code.
+_FONTS = (
+    "Padrão", "Serif", "Sans", "Mono",
+    "Open Sans", "Mulish", "Vera Serif",
+    "JetBrains Mono", "Fira Code",
+)
 
 
 def _system_dark() -> bool:
@@ -161,7 +166,7 @@ class EpubBridge(QObject):
 
     @Property(int, notify=fontChanged)
     def fontCount(self) -> int:
-        """Quantidade de fontes (Ctrl+1..4): padrão + serif + sans + mono."""
+        """Quantidade de fontes (Ctrl+1..9): padrão + serif + sans + mono + 5."""
         return len(_FONTS)
 
     @Property(str, notify=bookChanged)
@@ -280,7 +285,7 @@ class EpubBridge(QObject):
 
     @Slot(int)
     def setFontIndex(self, index: int) -> None:
-        """Troca a fonte do texto (Ctrl+1..4). 0 = padrão (a do próprio livro)."""
+        """Troca a fonte do texto (Ctrl+1..9). 0 = padrão (a do próprio livro)."""
         index = max(0, min(len(_FONTS) - 1, int(index)))
         if index == self._font_index:
             return

@@ -973,7 +973,7 @@ def test_qml(app):
     print("OK zoom via teclado (Ctrl+= :", z0, "→", z1, "; documento:", zi["zoom"], ")")
 
     # --- Fonte via teclado (Ctrl+2 no documento) → canal hash → bridge ---
-    # Ctrl+1..4 troca a família da fonte (padrão/serif/sans/mono): a página
+    # Ctrl+1..9 troca a família da fonte (padrão/serif/sans/mono/...): a página
     # escreve #pypub:cmd:fontN na URL; o onUrlChanged do QML chama
     # bridge.setFontIndex(); o onFontChanged aplica pypub_setFontIndex no
     # documento (estilo inline no <body>; sem recarga). Ctrl+1 volta à
@@ -1002,7 +1002,28 @@ def test_qml(app):
     assert f2 == 0, f"Ctrl+1 não voltou à fonte padrão (índice {f1} -> {f2})"
     fi = json.loads(page_js("JSON.stringify(pypub_fontInfo())"))
     assert fi["family"] == "", f"Ctrl+1 deveria limpar a fonte inline: {fi!r}"
-    print("OK fonte via teclado (Ctrl+2: serif no documento; Ctrl+1: volta ao padrão)")
+    # 9 fontes no total (Ctrl+1..9)
+    assert int(bridge.fontCount) == 9, (  # type: ignore[call-arg]
+        f"fontCount deveria ser 9: {bridge.fontCount!r}")
+    # Ctrl+5 → Open Sans (uma das fontes novas, índice 4)
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: '5', ctrlKey: true, bubbles: true}))")
+    t0 = time.time()
+    while int(bridge.fontIndex) == f2 and time.time() - t0 < 20:  # type: ignore[call-arg]
+        app.processEvents()
+        time.sleep(0.1)
+    f3 = int(bridge.fontIndex)  # type: ignore[call-arg]
+    assert f3 == 4, f"Ctrl+5 não trocou para Open Sans (índice {f2} -> {f3})"
+    fi = json.loads(page_js("JSON.stringify(pypub_fontInfo())"))
+    assert "Open Sans" in fi["family"], f"documento sem fonte Open Sans: {fi!r}"
+    # volta ao padrão para os testes seguintes
+    page_js("document.dispatchEvent(new KeyboardEvent('keydown', {key: '1', ctrlKey: true, bubbles: true}))")
+    t0 = time.time()
+    while int(bridge.fontIndex) == f3 and time.time() - t0 < 20:  # type: ignore[call-arg]
+        app.processEvents()
+        time.sleep(0.1)
+    f4 = int(bridge.fontIndex)  # type: ignore[call-arg]
+    assert f4 == 0, f"Ctrl+1 não voltou à fonte padrão (índice {f3} -> {f4})"
+    print("OK fonte via teclado (Ctrl+2: serif; Ctrl+5: Open Sans; Ctrl+1: padrão; 9 fontes)")
 
     print("OK QML Kirigami (janela criada, livro aberto na UI, título =", title,
           "| indicador p.", win.property("currentPage"), "/", win.property("pageCount"), ")")

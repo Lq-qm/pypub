@@ -64,7 +64,7 @@ K.ApplicationWindow {
             function(ok) { if (ok) window.refreshPageInfo() })
     }
 
-    // Fonte (Ctrl+1..4): aplica a família escolhida ao documento JÁ
+    // Fonte (Ctrl+1..9): aplica a família escolhida ao documento JÁ
     // CARREGADO sem recarregar (pypub_setFontIndex só toca a fonte — o zoom
     // continua dirigindo o tamanho). O re-embalinhamento pode mudar o nº de
     // páginas → reavaliamos.
@@ -219,6 +219,16 @@ K.ApplicationWindow {
                                 bridge ? bridge.setFontIndex(2) : undefined
                             } else if (action === "font4") {
                                 bridge ? bridge.setFontIndex(3) : undefined
+                            } else if (action === "font5") {
+                                bridge ? bridge.setFontIndex(4) : undefined
+                            } else if (action === "font6") {
+                                bridge ? bridge.setFontIndex(5) : undefined
+                            } else if (action === "font7") {
+                                bridge ? bridge.setFontIndex(6) : undefined
+                            } else if (action === "font8") {
+                                bridge ? bridge.setFontIndex(7) : undefined
+                            } else if (action === "font9") {
+                                bridge ? bridge.setFontIndex(8) : undefined
                             } else if (action.indexOf("page") === 0) {
                                 // Troca de página DENTRO da página (roda do mouse /
                                 // setas com foco): a página já andou (go()); aqui o QML
@@ -315,9 +325,10 @@ K.ApplicationWindow {
     //   <script> da própria página (renderer._PAGE_JS): setas ←/→ e
     //   PageUp/PageDown navegam a página; Ctrl+←/→ escrevem #pypub:cmd:<nome>
     //   na URL (lido pelo onUrlChanged da view, acima); Ctrl+=/-/0 é zoom;
-    //   Ctrl+1..4 troca a fonte (padrão/serif/sans/mono);
+    //   Ctrl+1..9 troca a fonte (padrão/serif/sans/mono/Open Sans/Mulish/
+    //   Vera Serif/JetBrains Mono/Fira Code);
     // - com a view sem foco, estes Shortcut de janela disparam a mesma API
-    //   (setas ←/→ = página; Ctrl+←/→ = capítulo; Ctrl+1..4 = fonte).
+    //   (setas ←/→ = página; Ctrl+←/→ = capítulo; Ctrl+1..9 = fonte).
     // A troca de página pela RODA do mouse é tratada só no <script> da página
     // (evento wheel da view → documento). Ctrl+O abre arquivo (só faz
     // sentido fora da página).
@@ -356,8 +367,10 @@ K.ApplicationWindow {
         enabled: !reader.activeFocus && window.hasBook
         onActivated: window.prevPage()
     }
-    // Fontes (Ctrl+1..4): 1 = padrão (a do livro), 2 = serif,
-    // 3 = sans, 4 = mono — a mesma API da página (bridge.setFontIndex).
+    // Fontes (Ctrl+1..9): 1 = padrão (a do livro), 2 = serif (Charter),
+    // 3 = sans (Cantarell), 4 = mono (DejaVu), 5 = Open Sans, 6 = Mulish,
+    // 7 = Vera Serif, 8 = JetBrains Mono, 9 = Fira Code — a mesma API da
+    // página (bridge.setFontIndex).
     Shortcut {
         sequences: ["Ctrl+1"]
         enabled: !reader.activeFocus && window.hasBook
@@ -377,5 +390,30 @@ K.ApplicationWindow {
         sequences: ["Ctrl+4"]
         enabled: !reader.activeFocus && window.hasBook
         onActivated: bridge ? bridge.setFontIndex(3) : undefined
+    }
+    Shortcut {
+        sequences: ["Ctrl+5"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.setFontIndex(4) : undefined
+    }
+    Shortcut {
+        sequences: ["Ctrl+6"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.setFontIndex(5) : undefined
+    }
+    Shortcut {
+        sequences: ["Ctrl+7"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.setFontIndex(6) : undefined
+    }
+    Shortcut {
+        sequences: ["Ctrl+8"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.setFontIndex(7) : undefined
+    }
+    Shortcut {
+        sequences: ["Ctrl+9"]
+        enabled: !reader.activeFocus && window.hasBook
+        onActivated: bridge ? bridge.setFontIndex(8) : undefined
     }
 }

@@ -63,10 +63,12 @@ título;
   / `Ctrl+-` / `Ctrl+0` na página e a bridge
   (`zoomIn`/`zoomOut`/`resetZoom`); **`Ctrl+roda` não tem função** (o
   handler da roda da página o ignora — nem zoom, nem paginação);
-- **Fonte do texto** (`Ctrl+1`–`Ctrl+4`): **1** = padrão (a tipografia do
-  próprio livro), **2** = serifada, **3** = sem serifa, **4** =
-  monoespaçada — aplicada ao `<body>` **sem recarga** (estilo inline, que
-  vence a fonte do livro) e com a paginação reavaliada; a bridge expõe
+- **Fonte do texto** (`Ctrl+1`–`Ctrl+9`): **1** = padrão (a tipografia do
+  próprio livro), **2** = serifada (Charter), **3** = sem serifa
+  (Cantarell), **4** = monoespaçada (DejaVu), **5** = Open Sans, **6** =
+  Mulish, **7** = Vera Serif, **8** = JetBrains Mono, **9** = Fira Code —
+  aplicada ao `<body>` **sem recarga** (estilo inline, que vence a fonte do
+  livro) e com a paginação reavaliada; a bridge expõe
   `fontIndex`/`fontCount`/`setFontIndex`;
 - **Tema segue o sistema** — modo claro/escuro do SO (a `KColorScheme` do
   Plasma; re-renderiza ao vivo se o tema do OS mudar com o app aberto);
@@ -76,7 +78,7 @@ título;
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `←` / `→` (páginas),
   `Ctrl+←` / `Ctrl+→` (capítulos), `PageUp` / `PageDown` (páginas),
-  `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom), `Ctrl+1`–`Ctrl+4` (fonte) —
+  `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom), `Ctrl+1`–`Ctrl+9` (fonte) —
   funcionam com a
   view focada (tratados no próprio documento) e sem foco (atalhos de
   janela); **a roda simples pagina** (no documento) e **Ctrl+roda não tem
@@ -162,8 +164,10 @@ pypub livro.epub
   tem função** (o zoom é só por teclado): a roda simples pagina, e o
   handler da roda ignora eventos com Ctrl/Meta (o que também suprime o
   zoom nativo do Chromium);
-- **Fonte do texto**: `Ctrl+1` padrão (a do livro), `Ctrl+2` serifada,
-  `Ctrl+3` sem serifa, `Ctrl+4` monoespaçada (ou `setFontIndex(0..3)` da
+- **Fonte do texto**: `Ctrl+1` padrão (a do livro), `Ctrl+2` serifada
+  (Charter), `Ctrl+3` sem serifa (Cantarell), `Ctrl+4` monoespaçada
+  (DejaVu), `Ctrl+5` Open Sans, `Ctrl+6` Mulish, `Ctrl+7` Vera Serif,
+  `Ctrl+8` JetBrains Mono, `Ctrl+9` Fira Code (ou `setFontIndex(0..8)` da
   bridge) — aplicada **sem recarga** (estilo inline no `<body>`); o zoom
   continua dirigindo somente o tamanho;
 - **Tema**: segue o **sistema operacional** (sem alternância manual) — se
@@ -182,12 +186,12 @@ pypub livro.epub
 │  │   • JS→Python: onUrlChanged lê #pypub:cmd:<nome>                │
 ││  │     (páginas/capítulos na borda, Ctrl+←/→, zoom, fonte)           │
 │  │   • zoom: pypub_setZoom(z) no documento (só a fonte; quadro fixo) │
-│  │   • fonte: pypub_setFontIndex(i) no documento (Ctrl+1..4)         │
+│  │   • fonte: pypub_setFontIndex(i) no documento (Ctrl+1..9)         │
 │  ├── atalhos: Shortcut de janela (view sem foco) + keydown na página │
 │  │   • roda do mouse + setas ←/→ → pypub_nextPage/prevPage          │
 │  │   • Ctrl+roda → sem função (handler da página ignora Ctrl/Meta)   │
 ││  │     zoom: Ctrl+=/-/0; roda simples pagina                         │
-│  │   • Ctrl+1..4 → fonte (padrão/serif/sans/mono)                    │
+│  │   • Ctrl+1..9 → fonte (padrão/serif/sans/mono/novas)              │
 │  └── rodapé: status + “cap. N/M” + “p. N/M”                         │
 └───────────────▲──────────────────────────────────────────────────────┘
                 │ context property "bridge"
@@ -323,7 +327,8 @@ fixo em 1 coluna).
     **no próprio documento** (o `<script>` injetado): `←`/`→` e
     `PageUp`/`PageDown` navegam a página; `Ctrl+←`/`Ctrl+→` escrevem a ação
     no fragmento da URL; `Ctrl+=`/`Ctrl+-`/`Ctrl+0` ajustam o zoom;
-    `Ctrl+1`–`Ctrl+4` trocam a fonte (padrão/serif/sans/mono);
+    `Ctrl+1`–`Ctrl+9` trocam a fonte (padrão/serif/sans/mono/Open Sans/
+    Mulish/Vera Serif/JetBrains Mono/Fira Code);
   - com a **view sem foco**, os itens `Shortcut` de janela disparam
     (ficam inativos enquanto `reader.activeFocus` — `enabled: !reader.activeFocus`).
 - **Canal JS→Python (teclado na página)** — o `QWebChannel`
@@ -333,7 +338,7 @@ fixo em 1 coluna).
   `history.replaceState(null, "", "#pypub:cmd:<nome>")` (sem entrada no
   histórico) e o `onUrlChanged` do QML lê o fragmento, executa a ação
   (`bridge.next()`/`bridge.previous()`/`bridge.zoomIn()`/`zoomOut()`/
-  `resetZoom()`/`setFontIndex(0..3)`) e limpa o fragmento. NB: o `replaceState` só funciona no
+  `resetZoom()`/`setFontIndex(0..8)`) e limpa o fragmento. NB: o `replaceState` só funciona no
   **documento atual** da view — no documento antigo (navegação em curso) a
   URL da view já é a nova e o `urlChanged` não dispara.
 - **Quando o indicador é preenchido / atualizado**: a view termina o estado
@@ -390,8 +395,9 @@ valida, sem abrir display:
    `bridge.zoomIn()` → documento com a fonte aplicada (enquadramento fixo),
    sem recarga) e a **fonte via teclado** (`Ctrl+2` →
    `bridge.setFontIndex(1)` → documento com fonte serifada no `<body>`;
-   `Ctrl+1` → `setFontIndex(0)` → limpa o estilo inline e volta à
-   tipografia do livro). O final da suíte
+   `Ctrl+5` → `setFontIndex(4)` → Open Sans; `Ctrl+1` → `setFontIndex(0)`
+   → limpa o estilo inline e volta à tipografia do livro; `fontCount` ==
+   9). O final da suíte
    inclui um **settling** antes do teardown: com o
    renderer ainda ocupado com a última navegação, a destruição dos objetos do
    WebEngine segfaulta no offscreen.
