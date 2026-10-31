@@ -107,7 +107,11 @@ _PAGE_BG_DARK = "#1f2328"
 # mudar com o app aberto. A tipografia do próprio livro vale (se ele
 # declarar fonte); Noto Sans é o fallback do leitor. A interface (toolbar,
 # rodapé, janela) usa as cores do Kirigami/KDE — integração nativa.
-_UI_FONT_STACK = '"Noto Sans", "Segoe UI", "DejaVu Sans", sans-serif'
+# Aspas SIMPLES de propósito: essa constante é embutida em atributos
+# style="..." (empty_html) — aspas duplas ali fechavam o atributo e
+# invalidavam o CSS inteiro. Em blocos <style> (theme_css) aspas simples
+# valem igual em CSS.
+_UI_FONT_STACK = "'Noto Sans', 'Segoe UI', 'DejaVu Sans', sans-serif"
 
 
 def theme_css(dark: bool = False) -> str:
@@ -122,9 +126,21 @@ def page_background(dark: bool = False) -> str:
 
 
 def empty_html(dark: bool = False) -> str:
-    """Página "abra um EPUB" — já com o tema (cores conforme o sistema)."""
-    fg, bg = ("#8a8f98", _PAGE_BG_DARK) if dark else ("#555a63", _PAGE_BG_LIGHT)
-    style = f'font-family:{_UI_FONT_STACK};text-align:center;padding-top:18vh;color:{fg};background:{bg};'
+    """Página "abra um EPUB" — já com o tema (cores conforme o sistema).
+
+    Texto centralizado na interface (horizontal e vertical, via flexbox)
+    e com a MESMA cor do texto de leitura (o cinza do tema) — visível em
+    modo claro e escuro.
+    """
+    fg, bg = ("#dfe3e8", _PAGE_BG_DARK) if dark else ("#21252b", _PAGE_BG_LIGHT)
+    style = (
+        f"font-family:{_UI_FONT_STACK};"
+        "margin:0;"
+        "display:flex;flex-direction:column;"
+        "align-items:center;justify-content:center;"
+        "min-height:100vh;box-sizing:border-box;text-align:center;"
+        f"color:{fg};background:{bg};"
+    )
     return (
         '<html><head><meta charset="utf-8"></head>'
         f'<body style="{style}">'
