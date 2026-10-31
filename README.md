@@ -97,7 +97,12 @@ título;
   desligado (`ApplicationHeaderStyle.None`) e os paddings da página são
   zerados, então a view começa no topo da área de conteúdo (só a
   decoração nativa do KDE fica acima) e as margens de leitura vêm do CSS
-  do capítulo (32px uniformes em todas as bordas);
+  do capítulo (32px uniformes em todas as bordas). O **ícone de janela** da
+  titlebar nativa (canto superior esquerdo, desenhado pelo KWin) é um
+  **livro aberto** — identidade do leitor — desenhado em SVG (módulo
+  `pypub/icon.py`) e renderizado com a cor que segue o tema do sistema
+  (escuro na titlebar clara, claro na escura); atualiza ao vivo se o modo
+  claro/escuro do OS mudar com o app aberto.
 - **Testes headless** (offscreen) cobrindo parser, ponte Python↔QML,
   renderização e a janela Kirigami real.
 

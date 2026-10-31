@@ -13,6 +13,7 @@ from PySide6.QtQml import QQmlEngine, QQmlComponent
 from PySide6.QtWidgets import QApplication
 
 from .bridge import EpubBridge
+from .icon import make_window_icon
 
 # Prioriza os módulos QML embutidos no wheel do PySide6 (mesma build das
 # libs Qt que os bindings Python usam); o do sistema entra depois (Kirigami/KF6).
@@ -42,6 +43,16 @@ def main(argv: list[str] | None = None) -> int:
     engine = QQmlEngine(app)
     bridge = EpubBridge()
     engine.rootContext().setContextProperty("bridge", bridge)
+
+    # Ícone da janela (livro aberto — identidade do leitor), na cor do tema:
+    # escuro na titlebar clara, claro na titlebar escura. Atualiza ao vivo
+    # se o modo claro/escuro do SO mudar com o app aberto.
+    def _apply_window_icon() -> None:
+        # bridge.dark é @Property (tipagem do PySide6); em runtime é bool
+        app.setWindowIcon(make_window_icon(bool(bridge.dark)))
+
+    _apply_window_icon()
+    bridge.darkChanged.connect(_apply_window_icon)
 
     root_qml = Path(__file__).resolve().parent / "qml" / "Main.qml"
     component = QQmlComponent(engine, QUrl.fromLocalFile(str(root_qml)))
