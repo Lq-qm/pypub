@@ -55,15 +55,16 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   topo, volta ao anterior**. As teclas de página (`←`/`→`, `PageUp`/`PageDown`)
   têm a mesma semântica (1 etapa); `Ctrl+←/→` continua como salto direto de
 título.
-  O **contador "p. N/M" não trava ao rolar rápido**: cada troca de página
-  escreve o nº no fragmento da URL (`#pypub:cmd:page:N`) e o QML lê o nº
-  **direto do fragmento (síncrono)** no `onUrlChanged` — não depende de um
-  round-trip JS→Python que pudesse atrasar (e um `replaceState` anterior, na
-  versão antiga, podia até apagar a página nova — a causa do "travamento" em
-  rolagem rápida);
-  o total `M` é atualizado em paralelo (`pypub_info()`), já que só muda em
-  zoom/fonte/reflow; see `Main.qml` (`onUrlChanged`) e `renderer.py`
-  (`go()` → `cmd("page:N")`);
+  O **contador "p. N/M" não trava ao rolar rápido** (flick): cada troca de
+  página escreve o nº no fragmento da URL (`#pypub:cmd:page:N`) e o QML lê o
+  nº **direto do fragmento (síncrono)** no `onUrlChanged` — sem round-trip
+  JS→Python por página. O `replaceState` (que gera um IPC renderer→browser)
+  passa por um **throttle** (`cmdPage`, máx. ~1 a cada 60ms, sempre o nº mais
+  recente): sem isso, o flick gera muitos IPCs e o Chromium ativa a proteção
+  *"Throttling navigation to prevent the browser from hanging"*
+  (crbug.com/1038223), que atrasa as mudanças de URL e o contador trava;
+  o total `M` só muda em zoom/fonte/reflow (que já disparam `pypub_info()`);
+  see `renderer.py` (`cmdPage`) e `Main.qml` (`onUrlChanged`);
 - **Layout responsivo e centralizado**: o bloco de leitura fica
   **centralizado** na janela (não colado ao canto superior esquerdo), mesmo
   em livros cujo CSS define margens no `body`; em janelas estreitas o texto

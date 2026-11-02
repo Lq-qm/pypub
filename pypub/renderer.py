@@ -386,8 +386,11 @@ _PAGE_JS = """
     // Canal JS→Python = fragmento da URL (mesmo transporte de Ctrl+←/→ —
     // ver cmd() abaixo); o nº na fragment garante que a URL MUDA a cada
     // troca (replaceState idêntico não dispara urlChanged). O QML lê o
-    // evento e re-sincroniza com pypub_info().
-    cmd("page:" + (target + 1));
+    // evento e re-sincroniza com pypub_info(). Usa cmdPage (THROTTLED) —
+    // ver o comentário em cmdPage: limita o flood de IPC ao rolar rápido
+    // (a proteção crbug.com/1038223 atrasava as mudanças de URL e o
+    // contador travava).
+    cmdPage(target + 1);
     return { current: target + 1, total: t };
   }
   function prevPage() {
@@ -451,6 +454,41 @@ _PAGE_JS = """
     try {
       history.replaceState(null, "", "#pypub:cmd:" + name);
     } catch (err) { /* sem history API: sem troca de capítulo via teclado */ }
+  }
+  // Versão com THROTTLE para a troca de página (page:N): cada replaceState
+  // gera um IPC (renderer → browser), e rolar RÁPIDO (flick) gera muitos em
+  // pouco tempo → o Chromium ativa a proteção "Throttling navigation to
+  // prevent the browser from hanging" (crbug.com/1038223) e ATRASA as
+  // mudanças de URL → o contador "p. N/M" trava. O throttle limita a ~1
+  // IPC a cada 60ms e envia SEMPRE o nº mais recente (o contador mostra a
+  // página atual, não a primeira da janela), então o flood não ocorre.
+  // As demais ações (next/prev/zoom/font) são raras → seguem no cmd() direto.
+  var _pageCmdTimer = null;
+  var _pageCmdPending = 0;
+  var _pageCmdLast = 0;
+  var PAGE_CMD_MIN_INTERVAL = 60; // ms entre IPCs de página
+  function cmdPage(n) {
+    var now = Date.now();
+    var elapsed = now - _pageCmdLast;
+    _pageCmdPending = n;
+    if (elapsed >= PAGE_CMD_MIN_INTERVAL) {
+      // tempo suficiente desde o último IPC → envia já (leading)
+      if (_pageCmdTimer) { clearTimeout(_pageCmdTimer); _pageCmdTimer = null; }
+      _pageCmdLast = now;
+      _pageCmdPending = 0;
+      cmd("page:" + n);
+    } else {
+      // ainda cedo → acumula e envia o MAIS RECENTE ao completar a janela
+      if (!_pageCmdTimer) {
+        _pageCmdTimer = setTimeout(function () {
+          _pageCmdTimer = null;
+          _pageCmdLast = Date.now();
+          var n2 = _pageCmdPending;
+          _pageCmdPending = 0;
+          cmd("page:" + n2);
+        }, PAGE_CMD_MIN_INTERVAL - elapsed);
+      }
+    }
   }
   function nextChapter() { cmd("next"); }
   function prevChapter() { cmd("prev"); }

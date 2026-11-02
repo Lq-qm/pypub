@@ -239,14 +239,15 @@ K.ApplicationWindow {
                                 // setas com foco): a página já andou (go()); aqui o QML
                                 // sincroniza o contador "p. N/M" do rodapé.
                                 // Lê o nº da página DIRETO do fragmento (síncrono —
-                                // "page:N"), sem depender só do round-trip async do
-                                // refreshPageInfo: ao rolar RÁPIDO, atualizar o
-                                // contador direto no evento evita que ele fique para
-                                // trás (o refresh async ainda roda, para atualizar o
-                                // total M — que só muda em zoom/fonte/reflow).
+                                // "page:N"). NÃO chama refreshPageInfo aqui: cada
+                                // runJavaScript("pypub_info()") é um IPC extra
+                                // (Python→JS) e, somado ao replaceState do JS, o
+                                // volume de IPC ao rolar rápido disparava a proteção
+                                // crbug.com/1038223 ("Throttling navigation…").
+                                // O total M só muda em zoom/fonte/reflow (que já
+                                // disparam o refresh próprio), então dispensa aqui.
                                 var pn = parseInt(action.substring("page".length + 1), 10)
                                 if (!isNaN(pn)) window.currentPage = pn
-                                window.refreshPageInfo()
                             }
                             // limpa o fragmento SOMENTE para as ações de
                             // estado (capítulo/zoom/fonte): elas podem se
