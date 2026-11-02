@@ -54,7 +54,16 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   capítulo, o gesto segue para o próximo** (que abre na página 1); **no
   topo, volta ao anterior**. As teclas de página (`←`/`→`, `PageUp`/`PageDown`)
   têm a mesma semântica (1 etapa); `Ctrl+←/→` continua como salto direto de
-título;
+título.
+  O **contador "p. N/M" não trava ao rolar rápido**: cada troca de página
+  escreve o nº no fragmento da URL (`#pypub:cmd:page:N`) e o QML lê o nº
+  **direto do fragmento (síncrono)** no `onUrlChanged` — não depende de um
+  round-trip JS→Python que pudesse atrasar (e um `replaceState` anterior, na
+  versão antiga, podia até apagar a página nova — a causa do "travamento" em
+  rolagem rápida);
+  o total `M` é atualizado em paralelo (`pypub_info()`), já que só muda em
+  zoom/fonte/reflow; see `Main.qml` (`onUrlChanged`) e `renderer.py`
+  (`go()` → `cmd("page:N")`);
 - **Layout responsivo e centralizado**: o bloco de leitura fica
   **centralizado** na janela (não colado ao canto superior esquerdo), mesmo
   em livros cujo CSS define margens no `body`; em janelas estreitas o texto

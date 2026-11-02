@@ -237,17 +237,32 @@ K.ApplicationWindow {
                             } else if (action.indexOf("page") === 0) {
                                 // Troca de página DENTRO da página (roda do mouse /
                                 // setas com foco): a página já andou (go()); aqui o QML
-                                // só sincroniza o contador "p. N/M" do rodapé. O nº na
-                                // fragment ("page:N") só existe para a URL mudar a cada
-                                // evento — o valor de referência é o pypub_info() que
-                                // o refresh lê agora.
+                                // sincroniza o contador "p. N/M" do rodapé.
+                                // Lê o nº da página DIRETO do fragmento (síncrono —
+                                // "page:N"), sem depender só do round-trip async do
+                                // refreshPageInfo: ao rolar RÁPIDO, atualizar o
+                                // contador direto no evento evita que ele fique para
+                                // trás (o refresh async ainda roda, para atualizar o
+                                // total M — que só muda em zoom/fonte/reflow).
+                                var pn = parseInt(action.substring("page".length + 1), 10)
+                                if (!isNaN(pn)) window.currentPage = pn
                                 window.refreshPageInfo()
                             }
-                            // limpa o fragmento (sem deixar no histórico); urlChanged
-                            // dispara de novo sem o prefixo → inócuo
-                            reader.runJavaScript(
-                                "history.replaceState(null, '', location.pathname + location.search)",
-                                function() {})
+                            // limpa o fragmento SOMENTE para as ações de
+                            // estado (capítulo/zoom/fonte): elas podem se
+                            // repetir IDÊNTICAS (ex.: zoomIn 2×, mesma fonte
+                            // 2×) e a URL precisa MUDAR para o urlChanged
+                            // disparar de novo. Para as páginas (page:N) o
+                            // valor sempre MUDA (a próxima é diferente), então
+                            // o clear não é preciso — e ele era ASYNC, então ao
+                            // rolar rápido ele corria com o próximo go() e
+                            // APAGAVA o fragmento novo; o onUrlChanged da
+                            // página nova lia a URL já limpa → não acionava o
+                            // refresh → o contador "p. N/M" TRAVAVA (o bug).
+                            if (action.indexOf("page") !== 0)
+                                reader.runJavaScript(
+                                    "history.replaceState(null, '', location.pathname + location.search)",
+                                    function() {})
                         }
                     }
         }
