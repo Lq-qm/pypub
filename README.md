@@ -78,11 +78,21 @@ título;
   Plasma; re-renderiza ao vivo se o tema do OS mudar com o app aberto);
   a tipografia do próprio livro vale (se ele declarar fonte), senão Noto
   Sans; a interface usa as cores do Kirigami/KDE (integração nativa);
+- **Restaura sem "tela preta"** — ao **minimizar e restaurar** a janela,
+  o conteúdo do QtWebEngine (renderizado num processo separado) pode voltar
+  sem um frame novo (tela preta) até que algo force um repaint. Um **filtro
+  de evento nativo** (`_RestoreRepaintFilter` em `pypub/app.py`) captura a
+  ativação/expose da janela (mais confiável que os sinais QML em KWin/Wayland)
+  e força o repaint: um **resize real** (–24px → +24px) re-layout +
+  re-render do GL e um **toggle de visibilidade** do `WebEngineView`
+  re-anexa a superfície descartada; a posição da página é preservada (nada
+  recarrega); see `pypub/app.py` (`_RestoreRepaintFilter`);
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `←` / `→` (páginas),
   `Ctrl+←` / `Ctrl+→` (capítulos), `PageUp` / `PageDown` (páginas),
-  `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom), `Ctrl+1`–`Ctrl+9` (fonte) —
+  `Ctrl+=` / `Ctrl+-` / `Ctrl+0` (zoom), `Ctrl+1`–`Ctrl+9` (fonte),
+  `Ctrl+Shift+R` (força repaint do conteúdo — fallback para "tela preta") —
   funcionam com a
   view focada (tratados no próprio documento) e sem foco (atalhos de
   janela); **a roda simples pagina** (no documento) e **Ctrl+roda não tem

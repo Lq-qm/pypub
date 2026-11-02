@@ -76,6 +76,9 @@ class EpubBridge(QObject):
     errorChanged = Signal()
     #: emitido com o HTML pronto para renderização (incluindo estado vazio)
     contentChanged = Signal(str)
+    #: pedido de repaint forçado (atalho Ctrl+Shift+R) — o app.py conecta ao
+    #: _RestoreRepaintFilter.forceNow()
+    repaintRequested = Signal()
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
@@ -309,6 +312,12 @@ class EpubBridge(QObject):
     @Slot()
     def resetZoom(self) -> None:
         self._set_zoom(1.0)
+
+    @Slot()
+    def requestRepaint(self) -> None:
+        """Pede um repaint forçado do conteúdo (Ctrl+Shift+R). O app.py
+        conecta este sinal ao filtro de janela, que faz o repaint real."""
+        self.repaintRequested.emit()
 
     @Slot(int)
     def setFontIndex(self, index: int) -> None:

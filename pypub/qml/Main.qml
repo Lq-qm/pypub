@@ -104,6 +104,11 @@ K.ApplicationWindow {
         }
     }
 
+    // (Bug "tela preta" ao restaurar da minimização: a correção está em
+    //  pypub/app.py — _RestoreRepaintFilter, um filtro de evento NATIVO que
+    //  força o repaint do WebEngine; os sinais QML onActiveChanged/
+    //  onVisibleChanged não disparam de forma confiável em KWin/Wayland.)
+
     function nextPage() {
         reader.runJavaScript(
             "typeof pypub_nextPage === 'function' ? pypub_nextPage() : null",
@@ -391,6 +396,13 @@ K.ApplicationWindow {
     Shortcut {
         sequences: [StandardKey.Open]
         onActivated: bridge ? bridge.chooseFile() : undefined
+    }
+    // Força um repaint do conteúdo (fallback para "tela preta" ao restaurar
+    // da minimização, caso o automático não tenha pegado). Sempre ativo.
+    Shortcut {
+        sequences: ["Ctrl+Shift+R"]
+        enabled: window.hasBook
+        onActivated: bridge ? bridge.requestRepaint() : undefined
     }
     Shortcut {
         sequences: [StandardKey.PrevPage]   // Ctrl+←
