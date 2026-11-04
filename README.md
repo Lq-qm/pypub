@@ -51,10 +51,13 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   (sensibilidade alta — 60 px ≈ 1 página), flick rápido = várias páginas de
   uma vez, rolagem fina (trackpad) = fração de página que acumula até
   completar (controle sub-página). **No fim do
-  capítulo, o gesto segue para o próximo** (que abre na página 1); **no
-  topo, volta ao anterior**. As teclas de página (`←`/`→`, `PageUp`/`PageDown`)
-  têm a mesma semântica (1 etapa); `Ctrl+←/→` continua como salto direto de
-título.
+  capítulo, o gesto segue para o próximo**; **no topo, volta ao anterior** —
+  e **abre na última página vista** daquele capítulo (aonde você parou de
+  ler), não na página 1: a bridge guarda a posição por capítulo
+  (`rememberPage`) e o HTML injeta a página inicial
+  (`window.pypubStartPage`), que o JS aplica ao carregar. As teclas de
+  página (`←`/`→`, `PageUp`/`PageDown`) têm a mesma semântica (1 etapa);
+  `Ctrl+←/→` continua como salto direto de título.
   O **contador "p. N/M" não trava ao rolar rápido** (flick): cada troca de
   página escreve o nº no fragmento da URL (`#pypub:cmd:page:N`) e o QML lê o
   nº **direto do fragmento (síncrono)** no `onUrlChanged` — sem round-trip

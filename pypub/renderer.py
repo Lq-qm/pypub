@@ -203,7 +203,7 @@ _PAGE_JS = """
   // troca, então navegação baseada só no offset ficaria defasada.
   // (Não existe rolagem manual: o clip é a janela de corte — ver CSS do
   // leitor.)
-  var state = { page: 0, anchors: null, dirty: true, rebases: 0 };
+  var state = { page: 0, anchors: null, dirty: true, rebases: 0, startApplied: false };
   // CAIXA DE LEITURA: o body é o aro (borda uniforme de 32px que NÃO rola);
   // o .pypub-clip é a janela de corte (scroll box). A página = o que cabe
   // no clip (a viewport menos 2×32px) — a borda da caixa permanece
@@ -405,6 +405,16 @@ _PAGE_JS = """
   function rebase() {
     state.rebases++;
     var a = anchors();
+    // aplica a página inicial (window.pypubStartPage) APENAS UMA VEZ —
+    // quando as âncoras estão prontas. Se o usuário já leu este capítulo,
+    // a bridge injetou a última página vista (aonde parou); o capítulo abre
+    // nela em vez de sempre na página 1. (sp > 1: página 1 é o padrão,
+    // dispensa ação; clamp garante que não ultrapassa a última página.)
+    if (!state.startApplied) {
+      var sp = parseInt(window.pypubStartPage, 10);
+      if (sp > 1) state.page = Math.min(sp - 1, a.length - 1);
+      state.startApplied = true;
+    }
     if (state.page > a.length - 1) state.page = a.length - 1;
     var c = clipEl();
     if (c) c.scrollTop = a[state.page];
@@ -866,6 +876,25 @@ def inject_css(html: str, dark: bool = False, zoom: float = 1.0) -> str:
     return style + html
 
 
+def inject_start_page(html: str, start_page: int) -> str:
+    """Injeta a página inicial (``window.pypubStartPage``) no <head>.
+
+    O JS de paginação, ao carregar, lê este valor e abre o capítulo nessa
+    página (em vez de sempre na página 1). Se o usuário já leu este capítulo,
+    a bridge passa a última página vista (aonde parou); senão, 1 (início).
+    """
+    try:
+        sp = max(1, int(start_page))
+    except (TypeError, ValueError):
+        sp = 1
+    # injeta ANTES do </head> (ou no fim, se não houver head)
+    tag = f'<script>window.pypubStartPage = {sp};</script>'
+    m = re.search(r"</head\s*>", html, re.IGNORECASE)
+    if m:
+        return html[: m.start()] + tag + html[m.start():]
+    return html + tag
+
+
 def inject_page_js(html: str) -> str:
     """Injeta o script de paginação no fim do <body> (ou no fim do HTML)."""
     script = f"<script>{_PAGE_JS}</script>"
@@ -902,6 +931,7 @@ def prepare_chapter(
     epub: Epub,
     dark: bool = False,
     zoom: float = 1.0,
+    start_page: int = 1,
 ) -> str:
     """Prepara o HTML do capítulo: recursos inline + CSS do leitor + paginação.
 
@@ -911,8 +941,14 @@ def prepare_chapter(
     recarga. O conteúdo fica dentro da CAIXA DE LEITURA (``.pypub-clip``
     dentro do ``body``): a borda uniforme de 32px não rola — a troca de
     página desloca o clip, mantendo o texto sempre enquadrado.
+
+    ``start_page`` (1-based) é a página onde o capítulo ABRE: se o usuário já
+    leu este capítulo, a bridge passa a última página vista (aonde parou);
+    senão, 1 (início). O JS injeta ``window.pypubStartPage`` e, ao carregar,
+    abre nessa página em vez de sempre na página 1.
     """
     html = inline_local_resources(raw_html, chapter_path, epub)
     html = inject_css(html, dark, zoom)
+    html = inject_start_page(html, start_page)
     html = inject_page_js(html)
     return inject_clip(html)

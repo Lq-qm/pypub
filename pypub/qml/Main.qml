@@ -207,8 +207,14 @@ K.ApplicationWindow {
                         if (fragment.startsWith("pypub:cmd:")) {
                             var action = fragment.substring("pypub:cmd:".length)
                             if (action === "next") {
+                                // guarda a posição (aonde parou) ANTES de
+                                // navegar: ao voltar, abre nessa página
+                                if (bridge && window.hasBook && window.currentPage > 1)
+                                    bridge.rememberPage(window.currentIndex, window.currentPage)
                                 bridge ? bridge.next() : undefined
                             } else if (action === "prev") {
+                                if (bridge && window.hasBook && window.currentPage > 1)
+                                    bridge.rememberPage(window.currentIndex, window.currentPage)
                                 bridge ? bridge.previous() : undefined
                             } else if (action === "zoomin") {
                                 bridge ? bridge.zoomIn() : undefined

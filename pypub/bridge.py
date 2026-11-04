@@ -93,6 +93,12 @@ class EpubBridge(QObject):
         self._server = ChapterServer()
         self._rev = 0
         self._last_url = ""
+        # Lembrete de POSIÇÃO DE LEITURA por capítulo: {índice: última página
+        # vista (1-based)}. Ao voltar a um capítulo, abre naquela página (a
+        #onde o usuário parou) em vez de sempre na página 1. O QML guarda a
+        # página atual ANTES de navegar (rememberPage) e o HTML injeta a
+        # página inicial (prepare_chapter → window.pypubStartPage).
+        self._page_memory: dict[int, int] = {}
         # estado inicial: página vazia já servida e URL válida para o QML
         self._emit_content()
         # tema do OS pode mudar com o app aberto (ex.: alternar Breeze/BreezeDark
@@ -267,6 +273,22 @@ class EpubBridge(QObject):
     def next(self) -> None:
         self.goTo(self._index + 1)
 
+    @Slot(int, int)
+    def rememberPage(self, chapter_index: int, page: int) -> None:
+        """Guarda a última página vista (1-based) de um capítulo.
+
+        O QML chama isso ANTES de navegar (prev/next), passando o índice do
+        capítulo que está saindo e a página atual. Ao voltar a esse capítulo,
+        ele abre nessa página (aonde o usuário parou de ler) em vez da página 1.
+        """
+        if self._epub is None:
+            return
+        try:
+            page = max(1, int(page))
+        except (TypeError, ValueError):
+            return
+        self._page_memory[chapter_index] = page
+
     @Slot(int)
     def goTo(self, index: int) -> None:
         if self._epub is None:
@@ -288,12 +310,16 @@ class EpubBridge(QObject):
             raw = self._epub.read(ch.path)
         except KeyError:
             return empty_html(self._dark)
+        # posição de leitura: se o usuário já leu este capítulo, abre na
+        # última página vista (aonde parou); senão, página 1 (início)
+        start_page = self._page_memory.get(self._index, 1)
         return prepare_chapter(
             raw.decode("utf-8", "replace"),
             ch.path,
             self._epub,
             dark=self._dark,
             zoom=self._zoom,
+            start_page=start_page,
         )
 
     @Slot(result=str)
