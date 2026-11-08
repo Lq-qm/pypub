@@ -11,6 +11,7 @@ import PySide6
 from PySide6.QtCore import QEvent, QObject, Qt, QUrl, QTimer
 from PySide6.QtGui import QWindow
 from PySide6.QtQml import QQmlComponent, QQmlEngine
+from PySide6.QtQuick import QQuickItem
 from PySide6.QtWidgets import QApplication
 
 from .bridge import EpubBridge
@@ -85,29 +86,36 @@ class _RestoreRepaintFilter(QObject):
         self._repaint()
 
     def _repaint(self) -> None:
-        """Força um repaint sem piscar visível.
+        """Força um repaint com o mínimo de "piscar" possível.
 
-        Estratégia:
-          1. **resize mínimo** (–8px → +8px) — o compositor (KWin) gera um
-             novo frame ao redimensionar a janela; o WebEngine re-renderiza
-             o conteúdo (re-anexa a superfície GL descartada);
-          2. **``requestUpdate()``** — pede um repaint do QML scene graph
-             (sem esconder/mostrar o conteúdo → sem "piscar").
+        O **hide/show** do ``WebEngineView`` é necessário para re-anexar a
+        superfície GL descartada (sem ele, o resize sozinho não força o
+        re-render). Para minimizar o "piscar":
+          1. resize **mínimo** (–8px → +8px) — suficiente para o compositor
+             gerar um novo frame, mas pequeno o bastante para ser discreto;
+          2. hide/show **rápido** (15ms) — o conteúdo some e volta num
+             instante (mais rápido que o tempo de resposta do olho ~20ms);
+          3. ``requestUpdate()`` — pede um repaint do QML scene graph.
 
-        O resize é pequeno (8px) e rápido (20ms) para minimizar o "piscar".
+        A posição da leitura é preservada (nada recarrega).
         """
         win = self._win
         ow, oh = win.width(), win.height()
         mw, mh = win.minimumWidth(), win.minimumHeight()
-        # resize mínimo → força re-layout + re-render do GL do WebEngine
+        reader = win.findChild(QQuickItem, "reader")
+        # resize mínimo + hide → força re-layout + re-anexa a superfície GL
         win.resize(max(mw, ow - 8), max(mh, oh - 8))
+        if reader is not None:
+            reader.setVisible(False)
 
         def _restore() -> None:
             win.resize(ow, oh)
+            if reader is not None:
+                reader.setVisible(True)
             win.requestUpdate()
             self._busy = False
 
-        QTimer.singleShot(20, _restore)
+        QTimer.singleShot(15, _restore)
 
 
 def _ensure_qml_import_path() -> None:
