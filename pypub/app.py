@@ -1,6 +1,6 @@
 """Bootstrap da aplicação: QApplication + QQmlEngine + contexto ``bridge``."""
 
-from __future__ import annotations
+from __future__ import annotations  # noqa: I001
 
 import os
 import sys
@@ -8,11 +8,9 @@ from pathlib import Path
 from typing import cast
 
 import PySide6
-
 from PySide6.QtCore import QEvent, QObject, Qt, QUrl, QTimer
 from PySide6.QtGui import QWindow
-from PySide6.QtQml import QQmlEngine, QQmlComponent
-from PySide6.QtQuick import QQuickItem
+from PySide6.QtQml import QQmlComponent, QQmlEngine
 from PySide6.QtWidgets import QApplication
 
 from .bridge import EpubBridge
@@ -38,11 +36,11 @@ class _RestoreRepaintFilter(QObject):
     ``WindowActivate`` / ``Expose`` / ``WindowStateChange``), que chega via
     ``eventFilter`` mesmo quando os sinais QML não chegam.
 
-    Mecânica (ao detectar o "restore"):
-      1. **resize real** (–24px → +24px) — força re-layout + re-render do
-         GL (um nudge de 1px pode ser otimizado fora);
-      2. **toggle de visibilidade** do ``WebEngineView`` — re-anexa a
-         superfície GL descartada.
+    Mecânica (ao detectar o "restore") — **sem piscar visível**:
+      1. **resize mínimo** (–8px → +8px) — força re-layout + re-render do
+         GL (o compositor gera um novo frame ao redimensionar a janela);
+      2. **``requestUpdate()``** — pede um repaint do QML scene graph
+         (sem esconder/mostrar o conteúdo → sem "piscar").
     A posição da leitura é preservada (nenhum destes recarrega a página).
     """
 
@@ -71,54 +69,45 @@ class _RestoreRepaintFilter(QObject):
             self._do_repaint()
         return False
 
-    # até 2 tentativas (a 1ª pode cair antes da superfície estar pronta)
-    _MAX_PASSES = 2
-
     def forceNow(self) -> None:
         """Força o repaint manualmente (atalho Ctrl+Shift+R), mesmo sem um
         "pending" de minimização — útil como fallback garantido."""
         if self._busy:
             return
         self._busy = True
-        self._pass = 0
-        self._repaint_pass()
+        self._repaint()
 
     def _do_repaint(self) -> None:
         if self._busy or not self._pending:
             return
         self._pending = False
         self._busy = True
-        self._pass = 0
-        self._repaint_pass()
+        self._repaint()
 
-    def _repaint_pass(self) -> None:
+    def _repaint(self) -> None:
+        """Força um repaint sem piscar visível.
+
+        Estratégia:
+          1. **resize mínimo** (–8px → +8px) — o compositor (KWin) gera um
+             novo frame ao redimensionar a janela; o WebEngine re-renderiza
+             o conteúdo (re-anexa a superfície GL descartada);
+          2. **``requestUpdate()``** — pede um repaint do QML scene graph
+             (sem esconder/mostrar o conteúdo → sem "piscar").
+
+        O resize é pequeno (8px) e rápido (20ms) para minimizar o "piscar".
+        """
         win = self._win
-        self._ow, self._oh = win.width(), win.height()
+        ow, oh = win.width(), win.height()
         mw, mh = win.minimumWidth(), win.minimumHeight()
-        # resize real → força re-layout + re-render do GL do WebEngine
-        win.resize(max(mw, self._ow - 24), max(mh, self._oh - 24))
-        QTimer.singleShot(50, self._restore_pass)
+        # resize mínimo → força re-layout + re-render do GL do WebEngine
+        win.resize(max(mw, ow - 8), max(mh, oh - 8))
 
-    def _restore_pass(self) -> None:
-        win = self._win
-        reader = win.findChild(QQuickItem, "reader")
-        # toggle de visibilidade do WebEngineView → re-anexa a superfície
-        if reader is not None:
-            reader.setVisible(False)
-        win.resize(self._ow, self._oh)
-        win.requestUpdate()
-
-        def _show() -> None:
-            if reader is not None:
-                reader.setVisible(True)
+        def _restore() -> None:
+            win.resize(ow, oh)
             win.requestUpdate()
-            self._pass += 1
-            if self._pass < self._MAX_PASSES:
-                QTimer.singleShot(200, self._repaint_pass)  # 2ª tentativa
-            else:
-                self._busy = False
+            self._busy = False
 
-        QTimer.singleShot(30, _show)
+        QTimer.singleShot(20, _restore)
 
 
 def _ensure_qml_import_path() -> None:

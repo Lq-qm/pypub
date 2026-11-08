@@ -91,15 +91,16 @@ Leitor de **EPUB** em **Qt6** — interface 100% Qt construída com
   Plasma; re-renderiza ao vivo se o tema do OS mudar com o app aberto);
   a tipografia do próprio livro vale (se ele declarar fonte), senão Noto
   Sans; a interface usa as cores do Kirigami/KDE (integração nativa);
-- **Restaura sem "tela preta"** — ao **minimizar e restaurar** a janela,
-  o conteúdo do QtWebEngine (renderizado num processo separado) pode voltar
-  sem um frame novo (tela preta) até que algo force um repaint. Um **filtro
-  de evento nativo** (`_RestoreRepaintFilter` em `pypub/app.py`) captura a
-  ativação/expose da janela (mais confiável que os sinais QML em KWin/Wayland)
-  e força o repaint: um **resize real** (–24px → +24px) re-layout +
-  re-render do GL e um **toggle de visibilidade** do `WebEngineView`
-  re-anexa a superfície descartada; a posição da página é preservada (nada
-  recarrega); see `pypub/app.py` (`_RestoreRepaintFilter`);
+- **Restaura sem "tela preta" nem "piscar"** — ao **minimizar e
+  restaurar** a janela, o conteúdo do QtWebEngine (renderizado num processo
+  separado) pode voltar sem um frame novo (tela preta) até que algo force um
+  repaint. Um **filtro de evento nativo** (`_RestoreRepaintFilter` em
+  `pypub/app.py`) captura a ativação/expose da janela (mais confiável que os
+  sinais QML em KWin/Wayland) e força o repaint com um **resize mínimo**
+  (–8px → +8px, 20ms) — o compositor (KWin) gera um novo frame ao
+  redimensionar, e o WebEngine re-renderiza a superfície; **sem esconder/
+  mostrar o conteúdo** (o que causaria "piscar"); a posição da página é
+  preservada (nada recarrega); see `pypub/app.py` (`_RestoreRepaintFilter`);
 - **Recursos locais embutidos**: imagens, CSS e fontes referenciados dentro
   do EPUB são carregados de dentro do próprio arquivo;
 - **Atalhos**: `Ctrl+O` (abrir), `←` / `→` (páginas),
