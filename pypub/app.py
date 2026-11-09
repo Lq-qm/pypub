@@ -37,13 +37,18 @@ class _RestoreRepaintFilter(QObject):
     ``WindowActivate`` / ``Expose`` / ``WindowStateChange``), que chega via
     ``eventFilter`` mesmo quando os sinais QML não chegam.
 
-    Mecânica (ao detectar o "restore") — **sem piscar visível**:
-      1. **resize mínimo** (–8px → +8px) — força re-layout + re-render do
-         GL (o compositor gera um novo frame ao redimensionar a janela);
-      2. **``requestUpdate()``** — pede um repaint do QML scene graph
-         (sem esconder/mostrar o conteúdo → sem "piscar").
+    Mecânica (ao detectar o "restore"):
+      1. **resize** (–24px → +24px) — força re-layout + re-render do GL
+         (o compositor gera um novo frame ao redimensionar a janela);
+      2. **hide/show** do ``WebEngineView`` — re-anexa a superfície GL
+         descartada;
+      3. **``requestUpdate()``** — pede um repaint do QML scene graph;
+      4. **2 passes** — repete o ciclo para garantir que o conteúdo
+         reapareceu.
     A posição da leitura é preservada (nenhum destes recarrega a página).
     """
+
+    _MAX_PASSES = 2
 
     def __init__(self, window: QObject) -> None:
         super().__init__(window)
@@ -76,46 +81,50 @@ class _RestoreRepaintFilter(QObject):
         if self._busy:
             return
         self._busy = True
-        self._repaint()
+        self._pass = 0
+        self._repaint_pass()
 
     def _do_repaint(self) -> None:
         if self._busy or not self._pending:
             return
         self._pending = False
         self._busy = True
-        self._repaint()
+        self._pass = 0
+        self._repaint_pass()
 
-    def _repaint(self) -> None:
-        """Força um repaint com o mínimo de "piscar" possível.
-
-        O **hide/show** do ``WebEngineView`` é necessário para re-anexar a
-        superfície GL descartada (sem ele, o resize sozinho não força o
-        re-render). Para minimizar o "piscar":
-          1. resize **mínimo** (–8px → +8px) — suficiente para o compositor
-             gerar um novo frame, mas pequeno o bastante para ser discreto;
-          2. hide/show **rápido** (15ms) — o conteúdo some e volta num
-             instante (mais rápido que o tempo de resposta do olho ~20ms);
-          3. ``requestUpdate()`` — pede um repaint do QML scene graph.
-
-        A posição da leitura é preservada (nada recarrega).
-        """
+    def _repaint_pass(self) -> None:
+        """Passo 1: encolhe a janela (–24px) para forçar re-layout +
+        re-render do GL (o compositor gera um novo frame ao redimensionar
+        a janela)."""
         win = self._win
-        ow, oh = win.width(), win.height()
+        self._ow, self._oh = win.width(), win.height()
         mw, mh = win.minimumWidth(), win.minimumHeight()
+        win.resize(max(mw, self._ow - 24), max(mh, self._oh - 24))
+        QTimer.singleShot(50, self._restore_pass)
+
+    def _restore_pass(self) -> None:
+        """Passo 2: esconde o ``WebEngineView`` (re-anexa a superfície GL
+        descartada), restaura o tamanho original, e 30 ms depois mostra o
+        reader de novo — ``requestUpdate()`` pede o repaint do scene graph.
+        Repete o ciclo até completar os ``_MAX_PASSES``."""
+        win = self._win
         reader = win.findChild(QQuickItem, "reader")
-        # resize mínimo + hide → força re-layout + re-anexa a superfície GL
-        win.resize(max(mw, ow - 8), max(mh, oh - 8))
         if reader is not None:
             reader.setVisible(False)
+        win.resize(self._ow, self._oh)
+        win.requestUpdate()
 
-        def _restore() -> None:
-            win.resize(ow, oh)
+        def _show() -> None:
             if reader is not None:
                 reader.setVisible(True)
             win.requestUpdate()
-            self._busy = False
+            self._pass += 1
+            if self._pass < self._MAX_PASSES:
+                QTimer.singleShot(200, self._repaint_pass)
+            else:
+                self._busy = False
 
-        QTimer.singleShot(15, _restore)
+        QTimer.singleShot(30, _show)
 
 
 def _ensure_qml_import_path() -> None:
